@@ -1,0 +1,43 @@
+
+
+services:
+  # PostgreSQL database service
+  postgres:
+    image: postgres:13
+    container_name: postgres
+    restart: always
+    environment:
+      POSTGRES_USER: manovay          # Database username
+      POSTGRES_PASSWORD: Padhai007   # Database password
+      POSTGRES_DB: sp500_db            # Database name
+    volumes:
+      - postgres_data:/var/lib/postgresql/data  # Persistent storage for database data
+    ports:
+      - "1111:5432"                   # Expose PostgreSQL port
+    networks:
+      - sp500_net                      # Connect to the custom network
+
+  # pgAdmin service for managing PostgreSQL
+  pgadmin:
+    image: dpage/pgadmin4
+    container_name: pgadmin
+    restart: always
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@example.com   # Default pgAdmin login email
+      PGADMIN_DEFAULT_PASSWORD: admin           # Default pgAdmin login password
+    ports:
+      - "8080:80"                    # Expose pgAdmin web interface on port 8080
+    links:
+      - postgres                      # Link pgAdmin to the postgres service
+    networks:
+      - sp500_net                    # Connect to the custom network
+
+# Named volume for PostgreSQL data persistence
+volumes:
+  postgres_data:
+    # Docker manages the volume for persistent database storage
+
+# Custom network for inter-service communication
+networks:
+  sp500_net:
+    driver: bridge 
