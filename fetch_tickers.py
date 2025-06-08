@@ -3,6 +3,7 @@ from datetime import date
 from dotenv import load_dotenv
 from sqlalchemy import create_engine, Column, String, Date
 from sqlalchemy.orm import declarative_base, sessionmaker
+import time # Though not used for sleep here, good practice if other calls were added
 import requests
 
 # Load environment variables
@@ -35,17 +36,19 @@ def fetch_and_upsert_tickers():
     try:
         # Fetch data from FMP API
         url = f"https://financialmodelingprep.com/api/v3/sp500_constituent?apikey={FMP_API_KEY}"
+        print(f"Fetching S&P 500 constituents list from API...")
         response = requests.get(url)
         response.raise_for_status()
         
-        # Get data and limit to 5 companies for testing
-        tickers_data = response.json()[:5]
+        # Get data for all S&P 500 constituents
+        tickers_data = response.json()
         
         # Track changes
         updated_count = 0
         
         # Process each ticker
         for ticker_data in tickers_data:
+            print(f"  Processing for DB: {ticker_data.get('symbol', 'N/A')} - {ticker_data.get('name', 'N/A')}")
             ticker = Ticker(
                 ticker=ticker_data['symbol'],
                 company_name=ticker_data['name'],
