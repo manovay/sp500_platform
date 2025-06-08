@@ -4,12 +4,16 @@ from sqlalchemy import create_engine, MetaData
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.dialects.postgresql import insert
 from dotenv import load_dotenv
+import time
 import os
 
 # Load environment with override
 load_dotenv(override=True)
 
 # Configuration
+# Define a delay to stay within API rate limits
+API_REQUEST_DELAY = 0.21  # seconds
+
 DATABASE_URL = os.getenv('DATABASE_URL')
 FMP_API_KEY = os.getenv('FMP_API_KEY')
 
@@ -37,12 +41,15 @@ def fetch_and_upsert_analyst_labels():
         )
         try:
             response = requests.get(url)
+            print(f"Fetching analyst labels for {ticker}...")
+            time.sleep(API_REQUEST_DELAY) # Respect API rate limit
             response.raise_for_status()
             data = response.json()
 
             # Validate response structure
             if not data or not isinstance(data, list):
                 skipped += 1
+                print(f"  -> Skipped {ticker}: No data or invalid format from API.")
                 continue
 
             snapshot = data[0]
@@ -59,6 +66,7 @@ def fetch_and_upsert_analyst_labels():
             # Skip if no overall score available
             if overall_score is None:
                 skipped += 1
+                print(f"  -> Skipped {ticker}: No overall score available.")
                 continue
 
             # Build upsert statement
@@ -94,10 +102,11 @@ def fetch_and_upsert_analyst_labels():
                 inserted += 1
             else:
                 updated += 1
+            print(f"  -> Successfully processed analyst labels for {ticker}.")
 
         except Exception as e:
             session.rollback()
-            print(f"Skipped {ticker}: {e}")
+            print(f"  -> Error processing analyst labels for {ticker}: {e}")
             skipped += 1
 
     session.commit()
