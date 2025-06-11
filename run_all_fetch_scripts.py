@@ -9,6 +9,8 @@ FETCH_SCRIPTS = [
     "init_db.py",
     "fetch_tickers.py",
     "fetch_prices.py",
+    "fetch_metrics.py",
+    "fetch_profile.py",
     "fetch_analyst_labels.py",
     "fetch_analyst_estimates.py",
     "fetch_historical_analyst.py",
