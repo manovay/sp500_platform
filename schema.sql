@@ -90,3 +90,19 @@ CREATE TABLE IF NOT EXISTS stock_news (
   source           VARCHAR(10)  NOT NULL,
   PRIMARY KEY (url)
 );
+
+CREATE TABLE IF NOT EXISTS key_metrics (
+    ticker VARCHAR(10) NOT NULL,
+    date DATE NOT NULL,
+    metrics JSON NOT NULL,
+    PRIMARY KEY (ticker, date),
+    FOREIGN KEY (ticker) REFERENCES tickers(ticker) ON DELETE CASCADE
+);
+
+-- 5. Profiles table: stores company profile data for each ticker
+CREATE TABLE IF NOT EXISTS profiles (
+    ticker VARCHAR(10) PRIMARY KEY,
+    profile_data JSON NOT NULL,
+    date_fetched DATE NOT NULL,
+    FOREIGN KEY (ticker) REFERENCES tickers(ticker) ON DELETE CASCADE
+);
