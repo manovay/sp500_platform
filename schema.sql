@@ -106,3 +106,21 @@ CREATE TABLE IF NOT EXISTS profiles (
     date_fetched DATE NOT NULL,
     FOREIGN KEY (ticker) REFERENCES tickers(ticker) ON DELETE CASCADE
 );
+
+-- Historical Allocations Table
+CREATE TABLE IF NOT EXISTS allocations (
+    ticker             VARCHAR(10)    NOT NULL
+        REFERENCES tickers(ticker) 
+        ON DELETE CASCADE,
+    allocation_date    DATE           NOT NULL,
+    market_cap_usd     BIGINT         NOT NULL,    -- raw market-cap value from FMP
+    allocation_pct     NUMERIC(7,6)   NOT NULL,    -- e.g. 0.061234 = 6.1234%
+    source             VARCHAR(50)    NOT NULL,    -- e.g. 'FMP Historical Market Cap'
+    retrieved_at       TIMESTAMP      NOT NULL 
+        DEFAULT NOW(),                  -- when this row was loaded
+    PRIMARY KEY (ticker, allocation_date)
+);
+
+-- Index to speed date-range and time-series queries
+CREATE INDEX IF NOT EXISTS idx_allocations_date 
+    ON allocations (allocation_date);
