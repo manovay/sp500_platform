@@ -52,6 +52,7 @@ You should see:
 ```
 ✅ Database schema created successfully
 ```
+This command now also creates a `predictions` table used by the Flask backend.
 
 ---
 
@@ -86,7 +87,16 @@ python fetch_analyst_labels.py
   - Port: `5432`
   - Username: `manovay`
   - Password: `Padhai007`
-  - Database: `sp500_db`
+    - Database: `sp500_db`
+
+---
+
+### 11. **Run the Flask backend**
+Start the API server:
+```bash
+python backend/app.py
+```
+The server listens on `http://localhost:5000` and logs requests to the `predictions` table.
 
 ---
 
@@ -98,6 +108,7 @@ python init_db.py
 python fetch_tickers.py
 python fetch_prices.py
 python fetch_analyst_labels.py
+python backend/app.py
 ```
 
 ---

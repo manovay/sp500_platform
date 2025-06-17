@@ -124,3 +124,11 @@ CREATE TABLE IF NOT EXISTS allocations (
 -- Index to speed date-range and time-series queries
 CREATE INDEX IF NOT EXISTS idx_allocations_date 
     ON allocations (allocation_date);
+
+-- Predictions table: stores LLM predictions for user requests
+CREATE TABLE IF NOT EXISTS predictions (
+    id SERIAL PRIMARY KEY,
+    request_data JSON NOT NULL,
+    response_data JSON NOT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
