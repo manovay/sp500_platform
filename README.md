@@ -113,4 +113,16 @@ python backend/app.py
 
 ---
 
-Let me know if you want a script to automate all of this, or if you hit any errors along the way!
+## Frontend React App
+
+A small React application is located in the `frontend/` directory and visualizes portfolio data from the API.
+
+Run it with:
+
+```bash
+cd frontend
+npm install
+npm start
+```
+
+The app expects endpoints from a Flask backend such as `/api/history`, `/api/current`, and `/api/growth`. See [frontend/README.md](frontend/README.md) for details.
