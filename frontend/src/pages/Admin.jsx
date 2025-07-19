@@ -5,6 +5,7 @@ export default function Admin() {
   const apiUrl = import.meta.env.VITE_API_URL || '';
 
   const runFetch = async (freq) => {
+    console.log(`Fetch script for frequency '${freq}' was called (but not run).`);
     setLogs(`Running ${freq}…\n`);
     try {
       const token = localStorage.getItem('ADMIN_TOKEN') || '';

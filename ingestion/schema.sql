@@ -138,3 +138,5 @@ CREATE TABLE ingestion_metadata (
   table_name TEXT PRIMARY KEY,
   frequency  TEXT NOT NULL
 );
+
+ALTER TABLE ingestion_metadata ADD COLUMN script_name TEXT;

@@ -19,7 +19,9 @@ services:
 
   sp500-backend: # NEW SERVICE BLOCK
     container_name: sp500-backend # NEW SERVICE BLOCK
-    build: ./backend # NEW SERVICE BLOCK
+    build: 
+      context: .
+      dockerfile: backend/Dockerfile # NEW SERVICE BLOCK
     depends_on: # NEW SERVICE BLOCK
       - postgres # NEW SERVICE BLOCK
     environment: # NEW SERVICE BLOCK

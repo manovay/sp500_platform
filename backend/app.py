@@ -29,7 +29,8 @@ def api_run_fetch():
         return jsonify({"status": "error", "error": "Invalid frequency"}), 400
     try:
         log = run_fetch(freq)
-        return jsonify({"status": "ok", "log": log})
+        log_message = f"[INFO] Fetch script for frequency '{freq}' was triggered."
+        return jsonify({"status": "ok", "log": log_message + "\n" + log})
     except Exception as exc:
         return jsonify({"status": "error", "error": str(exc)}), 500
 

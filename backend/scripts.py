@@ -1,22 +1,9 @@
 import os
-from io import StringIO
+import subprocess
 import psycopg2
-from psycopg2 import sql
-
 
 def run_fetch(freq: str) -> str:
-    """Refresh materialized views for the given frequency.
-
-    Parameters
-    ----------
-    freq: str
-        Frequency label to filter table names in ``ingestion_metadata``.
-
-    Returns
-    -------
-    str
-        Combined log output from the refresh operations.
-    """
+    from io import StringIO
     log_buffer = StringIO()
 
     db_config = {
@@ -37,22 +24,21 @@ def run_fetch(freq: str) -> str:
         with conn:
             with conn.cursor() as cur:
                 cur.execute(
-                    "SELECT table_name FROM ingestion_metadata WHERE frequency = %s",
+                    "SELECT script_name FROM ingestion_metadata WHERE frequency = %s AND script_name IS NOT NULL",
                     (freq,),
                 )
-                tables = [row[0] for row in cur.fetchall()]
-                if not tables:
-                    log_buffer.write(f"No tables found for frequency '{freq}'.\n")
-                for table in tables:
+                scripts = [row[0] for row in cur.fetchall()]
+                if not scripts:
+                    log_buffer.write(f"No scripts found for frequency '{freq}'.\n")
+                for script in scripts:
                     try:
-                        refresh_sql = sql.SQL("REFRESH MATERIALIZED VIEW {tbl}").format(
-                            tbl=sql.Identifier(table)
+                        result = subprocess.run(
+                            ["python", f"ingestion/{script}"],
+                            capture_output=True, text=True
                         )
-                        cur.execute(refresh_sql)
-                        log_buffer.write(f"Refreshed {table}\n")
+                        log_buffer.write(f"Ran {script}:\n{result.stdout}\n{result.stderr}\n")
                     except Exception as exc:
-                        conn.rollback()
-                        log_buffer.write(f"Error refreshing {table}: {exc}\n")
+                        log_buffer.write(f"Error running {script}: {exc}\n")
     except Exception as exc:
         log_buffer.write(f"Error running fetch: {exc}\n")
     finally:
