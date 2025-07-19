@@ -1,0 +1,9 @@
+requests
+pandas
+sqlalchemy
+psycopg2-binary
+python-dotenv
+Flask
+Flask-cors
+APScheduler
+gunicorn
