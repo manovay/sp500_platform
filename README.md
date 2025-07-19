@@ -40,6 +40,12 @@ Make sure it contains:
 ```
 DATABASE_URL=postgresql://manovay:Padhai007@localhost:1111/sp500_db
 FMP_API_KEY=your_fmp_api_key_here
+DB_HOST=postgres
+DB_PORT=5432
+DB_USER=manovay
+DB_PASSWORD=Padhai007
+DB_NAME=sp500_db
+ADMIN_TOKEN=choose_a_secret
 ```
 
 ---
