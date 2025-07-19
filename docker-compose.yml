@@ -17,6 +17,23 @@ services:
     networks:
       - sp500_net                      # Connect to the custom network
 
+  sp500-backend: # NEW SERVICE BLOCK
+    container_name: sp500-backend # NEW SERVICE BLOCK
+    build: ./backend # NEW SERVICE BLOCK
+    depends_on: # NEW SERVICE BLOCK
+      - postgres # NEW SERVICE BLOCK
+    environment: # NEW SERVICE BLOCK
+      DB_HOST: postgres # NEW SERVICE BLOCK
+      DB_PORT: 5432 # NEW SERVICE BLOCK
+      DB_USER: ${DB_USER:-manovay} # NEW SERVICE BLOCK (match postgres credentials)
+      DB_PASSWORD: ${DB_PASSWORD:-Padhai007} # NEW SERVICE BLOCK
+      DB_NAME: ${DB_NAME:-sp500_db} # NEW SERVICE BLOCK
+      ADMIN_TOKEN: ${ADMIN_TOKEN} # NEW SERVICE BLOCK
+    ports: # NEW SERVICE BLOCK
+      - "5000:5000" # NEW SERVICE BLOCK
+    networks: # NEW SERVICE BLOCK
+      - sp500_net # NEW SERVICE BLOCK
+
   # pgAdmin service for managing PostgreSQL
   pgadmin:
     image: dpage/pgadmin4
