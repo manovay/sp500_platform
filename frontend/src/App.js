@@ -1,24 +1,23 @@
-import React from 'react';
-import { Routes, Route, Link } from 'react-router-dom';
-import History from './pages/History';
-import Current from './pages/Current';
-import GrowthOverview from './pages/GrowthOverview';
+import logo from './logo.svg';
+import './App.css';
 
 function App() {
   return (
-    <div>
-      <nav>
-        <Link to="/">Current</Link>
-        <Link to="/history">History</Link>
-        <Link to="/growth">Growth Overview</Link>
-      </nav>
-      <main>
-        <Routes>
-          <Route path="/" element={<Current />} />
-          <Route path="/history" element={<History />} />
-          <Route path="/growth" element={<GrowthOverview />} />
-        </Routes>
-      </main>
+    <div className="App">
+      <header className="App-header">
+        <img src={logo} className="App-logo" alt="logo" />
+        <p>
+          Edit <code>src/App.js</code> and save to reload.
+        </p>
+        <a
+          className="App-link"
+          href="https://reactjs.org"
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          Learn React
+        </a>
+      </header>
     </div>
   );
 }
