@@ -28,7 +28,26 @@ def init_database():
             connection.commit()
         
         print("✅ Database schema created successfully")
-        
+        seed_sql = """
+        INSERT INTO ingestion_metadata (table_name, frequency)
+        VALUES
+          ('tickers',           'quarterly'),
+          ('prices',            'daily'),
+          ('analyst_labels',    'daily'),
+          ('analyst_estimates', 'quarterly'),
+          ('grades_historical', 'weekly'),
+          ('stock_news',        'daily'),
+          ('key_metrics',       'annual'),
+          ('profiles',          'annual'),
+          ('allocations',       'weekly'),
+          ('predictions',       'weekly')
+        ON CONFLICT (table_name) DO UPDATE
+          SET frequency = EXCLUDED.frequency;
+        """
+        with engine.connect() as conn:
+            conn.execute(text(seed_sql))
+            conn.commit()
+        print("✅ ingestion_metadata seeded successfully")
     except Exception as e:
         print(f"Error initializing database: {str(e)}")
         raise
