@@ -1,5 +1,5 @@
 -- 1. Tickers table: stores ticker info
-CREATE TABLE IF NOT EXISTS tickers (
+CREATE TABLE IF NOT EXISTS tickers ( --Quarterly
     ticker VARCHAR(10) PRIMARY KEY,
     company_name TEXT NOT NULL,
     sector TEXT,
@@ -7,7 +7,7 @@ CREATE TABLE IF NOT EXISTS tickers (
 );
 
 -- 2. Prices table: stores daily price data for each ticker
-CREATE TABLE IF NOT EXISTS prices (
+CREATE TABLE IF NOT EXISTS prices ( -- Daily
     ticker VARCHAR(10),
     price_date DATE,
     open_price NUMERIC(12,4),
@@ -23,7 +23,7 @@ CREATE TABLE IF NOT EXISTS prices (
 CREATE INDEX idx_prices_ticker_date ON prices (ticker, price_date);
 
 -- 3. Analyst labels table: stores analyst ratings for each ticker
-CREATE TABLE IF NOT EXISTS analyst_labels (
+CREATE TABLE IF NOT EXISTS analyst_labels ( --Daily
     ticker                         VARCHAR(10) NOT NULL,
     label_date                     DATE        NOT NULL,
     -- letter‐grade overall rating (e.g. 'A-', 'B+')
@@ -40,7 +40,8 @@ CREATE TABLE IF NOT EXISTS analyst_labels (
     PRIMARY KEY (ticker, label_date)
 );
 
-CREATE TABLE IF NOT EXISTS analyst_estimates (
+CREATE TABLE IF NOT EXISTS analyst_estimates ( --Quarterly
+  
   symbol               VARCHAR(10)    NOT NULL,
   report_date          DATE           NOT NULL,
   revenue_low          BIGINT,
@@ -66,7 +67,7 @@ CREATE TABLE IF NOT EXISTS analyst_estimates (
   source               VARCHAR(50)    NOT NULL,
   PRIMARY KEY (symbol, report_date)
 );
-CREATE TABLE IF NOT EXISTS grades_historical (
+CREATE TABLE IF NOT EXISTS grades_historical ( --Weekly
   symbol                     VARCHAR(10)  NOT NULL,
   rating_date                DATE         NOT NULL,
   analyst_ratings_buy        INTEGER,
@@ -78,7 +79,7 @@ CREATE TABLE IF NOT EXISTS grades_historical (
 );
 
 
-CREATE TABLE IF NOT EXISTS stock_news (
+CREATE TABLE IF NOT EXISTS stock_news ( --Daily
   url              TEXT         NOT NULL,
   symbol           VARCHAR(10)  NOT NULL,
   published_date   TIMESTAMP    NOT NULL,
@@ -91,7 +92,7 @@ CREATE TABLE IF NOT EXISTS stock_news (
   PRIMARY KEY (url)
 );
 
-CREATE TABLE IF NOT EXISTS key_metrics (
+CREATE TABLE IF NOT EXISTS key_metrics ( --Annual
     ticker VARCHAR(10) NOT NULL,
     date DATE NOT NULL,
     metrics JSON NOT NULL,
@@ -99,16 +100,15 @@ CREATE TABLE IF NOT EXISTS key_metrics (
     FOREIGN KEY (ticker) REFERENCES tickers(ticker) ON DELETE CASCADE
 );
 
--- 5. Profiles table: stores company profile data for each ticker
-CREATE TABLE IF NOT EXISTS profiles (
+CREATE TABLE IF NOT EXISTS profiles ( --Annual
     ticker VARCHAR(10) PRIMARY KEY,
     profile_data JSON NOT NULL,
     date_fetched DATE NOT NULL,
     FOREIGN KEY (ticker) REFERENCES tickers(ticker) ON DELETE CASCADE
 );
 
--- Historical Allocations Table
-CREATE TABLE IF NOT EXISTS allocations (
+
+CREATE TABLE IF NOT EXISTS allocations ( --Weekly
     ticker             VARCHAR(10)    NOT NULL
         REFERENCES tickers(ticker) 
         ON DELETE CASCADE,
@@ -126,9 +126,15 @@ CREATE INDEX IF NOT EXISTS idx_allocations_date
     ON allocations (allocation_date);
 
 -- Predictions table: stores LLM predictions for user requests
-CREATE TABLE IF NOT EXISTS predictions (
+CREATE TABLE IF NOT EXISTS predictions ( --Weekly
     id SERIAL PRIMARY KEY,
     request_data JSON NOT NULL,
     response_data JSON NOT NULL,
     created_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
+
+CREATE TABLE ingestion_metadata (
+  table_name TEXT PRIMARY KEY,
+  frequency  TEXT NOT NULL
 );
