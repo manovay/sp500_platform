@@ -7,6 +7,8 @@ from dotenv import load_dotenv
 import time
 import os
 
+#Quarterly
+
 # Load environment (override if already set)
 load_dotenv(override=True)
 

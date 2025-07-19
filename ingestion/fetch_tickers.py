@@ -6,6 +6,8 @@ from sqlalchemy.orm import declarative_base, sessionmaker
 import time # Though not used for sleep here, good practice if other calls were added
 import requests
 
+#Quarterly 
+
 # Load environment variables
 load_dotenv(override=True)
 FMP_API_KEY = os.getenv('FMP_API_KEY')

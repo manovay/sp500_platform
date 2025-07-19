@@ -15,6 +15,8 @@ DATABASE_URL = os.getenv('DATABASE_URL')
 if not FMP_API_KEY or not DATABASE_URL:
     raise ValueError("FMP_API_KEY and DATABASE_URL must be set in .env file")
 
+#Annual
+
 # Create SQLAlchemy base and engine
 engine = create_engine(DATABASE_URL)
 Session = sessionmaker(bind=engine)

@@ -7,6 +7,8 @@ from sqlalchemy.dialects.postgresql import insert
 import requests
 import time
 
+#Annual
+
 # Load environment variables
 load_dotenv(override=True)
 FMP_API_KEY = os.getenv('FMP_API_KEY')

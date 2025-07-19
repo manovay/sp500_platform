@@ -7,6 +7,8 @@ from dotenv import load_dotenv
 import time
 import os
 
+#Daily
+
 # Load environment with override
 load_dotenv(override=True)
 
