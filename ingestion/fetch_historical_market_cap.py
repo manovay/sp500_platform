@@ -15,6 +15,8 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import declarative_base, sessionmaker
 
+#Weekly
+
 # Load environment variables
 load_dotenv(override=True)
 FMP_API_KEY = os.getenv("FMP_API_KEY")
