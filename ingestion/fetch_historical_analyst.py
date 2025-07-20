@@ -35,7 +35,7 @@ def fetch_and_upsert_grades_historical():
     inserted = updated = skipped = 0
 
     # Retrieve all tickers
-    tickers = [t[0] for t in session.query(tickers_table.c.ticker).all()]
+            ticker_symbols = ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'TSLA']
 
     for ticker in tickers:
         url   = (

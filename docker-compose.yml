@@ -30,7 +30,6 @@ services:
       DB_USER: ${DB_USER:-manovay} # NEW SERVICE BLOCK (match postgres credentials)
       DB_PASSWORD: ${DB_PASSWORD:-Padhai007} # NEW SERVICE BLOCK
       DB_NAME: ${DB_NAME:-sp500_db} # NEW SERVICE BLOCK
-      ADMIN_TOKEN: ${ADMIN_TOKEN} # NEW SERVICE BLOCK
     ports: # NEW SERVICE BLOCK
       - "5000:5000" # NEW SERVICE BLOCK
     networks: # NEW SERVICE BLOCK

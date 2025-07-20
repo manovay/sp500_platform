@@ -37,7 +37,7 @@ def fetch_and_upsert_stock_news():
         today      = date.today()
 
         inserted = updated = skipped = 0
-        tickers = [t[0] for t in session.query(tickers_table.c.ticker).all()]
+            ticker_symbols = ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'TSLA']
 
         for ticker in tickers:
             url = (

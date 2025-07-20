@@ -4,6 +4,8 @@ import Layout from './components/Layout';
 import Dashboard from './pages/Dashboard';
 import Details from './pages/Details';
 import Admin from './pages/Admin';
+import StockList from './pages/StockList';
+
 export default function App() {
   return (
     <Routes>
@@ -11,6 +13,7 @@ export default function App() {
         <Route index element={<Dashboard />} />
         <Route path="details/:ticker" element={<Details />} />
         <Route path="admin" element={<Admin />} />
+        <Route path="stocks" element={<StockList />} />
       </Route>
     </Routes>
   );

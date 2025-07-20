@@ -20,7 +20,7 @@ CREATE TABLE IF NOT EXISTS prices ( -- Daily
 );
 
 -- Index for fast lookup by ticker and price_date
-CREATE INDEX idx_prices_ticker_date ON prices (ticker, price_date);
+CREATE INDEX IF NOT EXISTS idx_prices_ticker_date ON prices (ticker, price_date);
 
 -- 3. Analyst labels table: stores analyst ratings for each ticker
 CREATE TABLE IF NOT EXISTS analyst_labels ( --Daily

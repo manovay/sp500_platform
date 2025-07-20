@@ -13,8 +13,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy the rest of your backend code (app.py, scripts.py, etc.)
 COPY backend/ .
 
-# Copy ingestion/schema.sql into your `backend/` directory
-COPY ingestion/schema.sql .
+# Copy ingestion scripts and schema
+COPY ingestion/ ./ingestion/
 
-# Launch the Flask app via Gunicorn on port 5000
-CMD ["sh", "-c", "python init_db.py && python app.py"]
+# Launch the Flask app
+CMD ["sh", "-c", "python simple_storage.py && python app.py"]

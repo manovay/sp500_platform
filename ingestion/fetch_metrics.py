@@ -33,7 +33,7 @@ def fetch_and_upsert_metrics():
     inserted = updated = skipped = 0
     try:
         # Get all tickers from the tickers table
-        ticker_symbols = [t[0] for t in session.query(tickers_table.c.ticker).all()]
+            ticker_symbols = ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'TSLA']
         total_tickers = len(ticker_symbols)
         print(f"Found {total_tickers} tickers in DB to process for key metrics.")
 

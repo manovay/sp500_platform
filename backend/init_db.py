@@ -26,22 +26,36 @@ def init_database():
         
         # Get database URL from environment variable
         database_url = os.getenv('DATABASE_URL')
-        print("Using DATABASE_URL =", database_url)
         if not database_url:
-            raise ValueError("DATABASE_URL environment variable is not set")
+            # Construct DATABASE_URL from individual components
+            db_host = os.getenv("DB_HOST", "postgres")
+            db_port = os.getenv("DB_PORT", "5432")
+            db_user = os.getenv("DB_USER", "manovay")
+            db_password = os.getenv("DB_PASSWORD", "Padhai007")
+            db_name = os.getenv("DB_NAME", "sp500_db")
+            database_url = f"postgresql://{db_user}:{db_password}@{db_host}:{db_port}/{db_name}"
+        
+        print("Using DATABASE_URL =", database_url)
         
         # Create SQLAlchemy engine
         engine = wait_for_postgres(database_url)
         
         # Read schema.sql file
-        schema_path = Path(__file__).parent / 'schema.sql'
+        schema_path = Path(__file__).parent / 'ingestion' / 'schema.sql'
         with open(schema_path, 'r') as f:
             schema_sql = f.read()
         
         # Execute schema.sql
         with engine.connect() as connection:
-            connection.execute(text(schema_sql))
-            connection.commit()
+            try:
+                connection.execute(text(schema_sql))
+                connection.commit()
+            except Exception as e:
+                # If tables already exist, that's fine - just log it
+                if "already exists" in str(e):
+                    print("✅ Database schema already exists, skipping creation")
+                else:
+                    raise e
         
         print("✅ Database schema created successfully")
         seed_sql = """
@@ -62,9 +76,16 @@ ON CONFLICT (table_name) DO UPDATE
       script_name = EXCLUDED.script_name;
 """
         with engine.connect() as conn:
-            conn.execute(text(seed_sql))
-            conn.commit()
-        print("✅ ingestion_metadata seeded successfully")
+            try:
+                conn.execute(text(seed_sql))
+                conn.commit()
+                print("✅ ingestion_metadata seeded successfully")
+            except Exception as e:
+                # If data already exists, that's fine - just log it
+                if "already exists" in str(e) or "duplicate key" in str(e):
+                    print("✅ ingestion_metadata already exists, skipping seeding")
+                else:
+                    raise e
     except Exception as e:
         print(f"Error initializing database: {str(e)}")
         raise

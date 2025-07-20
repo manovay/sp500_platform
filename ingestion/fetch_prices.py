@@ -46,10 +46,10 @@ def fetch_and_upsert_prices():
         today = date.today()
         three_years_ago = today - timedelta(days=365*3)
 
-        # Get all tickers from the database
-        tickers = [t[0] for t in session.query(Ticker.ticker).all()]
+        # Get all tickers from the database (limit to 5 for testing)
+        tickers = [t[0] for t in session.query(Ticker.ticker).all()][:5]
         total_upserts = 0
-        print(f"Found {len(tickers)} tickers to process for price data.")
+        print(f"Found {len(tickers)} tickers to process for price data (limited to 5 for testing).")
 
         for symbol in tickers:
             # Format dates for the API query
