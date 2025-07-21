@@ -49,11 +49,12 @@ class Ticker(Base):
     __tablename__ = "tickers"
     ticker = Column(String(10), primary_key=True)
 
-def fetch_and_upsert_market_caps():
+def fetch(from_date):
     session = Session()
     try:
         today = date.today()
-        three_years_ago = today - timedelta(days=365 * 3)
+        if isinstance(from_date, str):
+            from_date = datetime.strptime(from_date, "%Y-%m-%d").date()
 
         # Get all tickers from the database
         tickers = [t[0] for t in session.query(Ticker.ticker).all()]
@@ -62,7 +63,7 @@ def fetch_and_upsert_market_caps():
         print(f"Found {len(tickers)} tickers to process for historical market cap data.")
 
         for idx, symbol in enumerate(tickers, start=1):
-            from_date_str = three_years_ago.isoformat()
+            from_date_str = from_date.isoformat()
             to_date_str = today.isoformat()
             url = (
                 f"https://financialmodelingprep.com/api/v3/"
@@ -94,6 +95,8 @@ def fetch_and_upsert_market_caps():
                         continue
                     try:
                         rec_date = datetime.strptime(date_str, "%Y-%m-%d").date()
+                        if rec_date < from_date:
+                            continue
                         entry = HistoricalAllocation(
                             ticker=symbol,
                             allocation_date=rec_date,
@@ -115,7 +118,7 @@ def fetch_and_upsert_market_caps():
                 skipped_tickers += 1
                 session.rollback()
 
-        # ─── Compute allocation_pct for each date ───────────────────────────────
+        # ────────────── Compute allocation_pct for each date ──────────────
         print("\n🔢 Calculating allocation_pct for each allocation_date …")
         session.execute(text("""
             UPDATE allocations AS a
@@ -140,6 +143,5 @@ def fetch_and_upsert_market_caps():
         session.close()
 
 if __name__ == "__main__":
-    print("🚀 Starting historical market cap fetch …")
-    fetch_and_upsert_market_caps()
-    print("🏁 Complete.")
+    default_from_date = (date.today() - timedelta(days=365*3)).isoformat()
+    fetch(default_from_date)

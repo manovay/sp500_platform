@@ -1,4 +1,20 @@
+
+DROP TABLE IF EXISTS allocations CASCADE;
+DROP TABLE IF EXISTS analyst_estimates CASCADE;
+DROP TABLE IF EXISTS analyst_labels CASCADE;
+DROP TABLE IF EXISTS grades_historical CASCADE;
+DROP TABLE IF EXISTS key_metrics CASCADE;
+DROP TABLE IF EXISTS prices CASCADE;
+DROP TABLE IF EXISTS profiles CASCADE;
+DROP TABLE IF EXISTS stock_news CASCADE;
+DROP TABLE IF EXISTS tickers CASCADE;
+DROP TABLE IF EXISTS predictions CASCADE;
+DROP TABLE IF EXISTS ingestion_metadata CASCADE;
+
+
 -- 1. Tickers table: stores ticker info
+
+
 CREATE TABLE IF NOT EXISTS tickers ( --Quarterly
     ticker VARCHAR(10) PRIMARY KEY,
     company_name TEXT NOT NULL,
@@ -140,3 +156,4 @@ CREATE TABLE ingestion_metadata (
 );
 
 ALTER TABLE ingestion_metadata ADD COLUMN script_name TEXT;
+ALTER TABLE ingestion_metadata ADD COLUMN last_run_date DATE;

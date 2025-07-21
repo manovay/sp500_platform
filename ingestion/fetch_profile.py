@@ -1,5 +1,5 @@
 import os
-from datetime import date
+from datetime import date, timedelta, datetime
 from dotenv import load_dotenv
 from sqlalchemy import create_engine, MetaData
 from sqlalchemy.orm import sessionmaker
@@ -28,8 +28,10 @@ profiles_table = metadata.tables['profiles']
 
 API_REQUEST_DELAY = 0.21  # seconds (for ~285 requests per minute)
 
-def fetch_and_upsert_profiles():
+def fetch(from_date):
     session = Session()
+    if isinstance(from_date, str):
+        from_date = datetime.strptime(from_date, "%Y-%m-%d").date()
     today = date.today()
     inserted = updated = skipped = 0
     try:
@@ -98,4 +100,5 @@ def fetch_and_upsert_profiles():
         session.close()
 
 if __name__ == "__main__":
-    fetch_and_upsert_profiles()
+    default_from_date = (date.today() - timedelta(days=365*3)).isoformat()
+    fetch(default_from_date)

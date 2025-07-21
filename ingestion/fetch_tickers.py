@@ -1,9 +1,9 @@
 import os
-from datetime import date
+from datetime import date, timedelta, datetime
 from dotenv import load_dotenv
 from sqlalchemy import create_engine, Column, String, Date
 from sqlalchemy.orm import declarative_base, sessionmaker
-import time # Though not used for sleep here, good practice if other calls were added
+import time
 import requests
 
 #Quarterly 
@@ -30,25 +30,17 @@ class Ticker(Base):
     sector = Column(String)
     date_added = Column(Date)
 
-def fetch_and_upsert_tickers():
-    # Create session
+def fetch(from_date):
+    # from_date is ignored for tickers, but kept for interface consistency
     session = Session()
     today = date.today()
-    
     try:
-        # Fetch data from FMP API
         url = f"https://financialmodelingprep.com/api/v3/sp500_constituent?apikey={FMP_API_KEY}"
         print(f"Fetching S&P 500 constituents list from API...")
         response = requests.get(url)
         response.raise_for_status()
-        
-        # Get data for all S&P 500 constituents
         tickers_data = response.json()
-        
-        # Track changes
         updated_count = 0
-        
-        # Process each ticker
         for ticker_data in tickers_data:
             print(f"  Processing for DB: {ticker_data.get('symbol', 'N/A')} - {ticker_data.get('name', 'N/A')}")
             ticker = Ticker(
@@ -57,15 +49,10 @@ def fetch_and_upsert_tickers():
                 sector=ticker_data['sector'],
                 date_added=today
             )
-            
-            # Merge will update if exists, insert if not
             session.merge(ticker)
             updated_count += 1
-        
-        # Commit all changes
         session.commit()
-        print(f"✅ Successfully processed {updated_count} tickers")
-        
+        print(f"\u2705 Successfully processed {updated_count} tickers")
     except requests.RequestException as e:
         print(f"Error fetching data from API: {str(e)}")
         session.rollback()
@@ -78,4 +65,5 @@ def fetch_and_upsert_tickers():
         session.close()
 
 if __name__ == "__main__":
-    fetch_and_upsert_tickers() 
+    default_from_date = (date.today() - timedelta(days=365*3)).isoformat()
+    fetch(default_from_date) 
