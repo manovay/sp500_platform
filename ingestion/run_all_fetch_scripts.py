@@ -1,5 +1,4 @@
 import os
-import sys
 from datetime import date, timedelta, datetime
 from dotenv import load_dotenv
 import importlib
@@ -30,7 +29,6 @@ FREQUENCY_TO_DAYS = {
     "manual": 0,  # always run if manual
 }
 
-# Connect to the database
 engine = create_engine(DATABASE_URL)
 
 def get_meta_info():
@@ -49,7 +47,6 @@ def get_meta_info():
                     "last_run_date": row[1]
                 }
             else:
-                # Default: fetch last 3 years if not found
                 meta_info[script] = {
                     "frequency": "manual",
                     "last_run_date": (date.today() - timedelta(days=365*3)).isoformat()
@@ -77,25 +74,26 @@ def update_last_run_date(script):
 
 def main():
     print(f"\n[{datetime.now().isoformat()}] 🚀 Starting the scheduled data fetching pipeline...\n")
+    meta_info = get_meta_info()
     for script, _ in FETCH_MODULES:
         freq = meta_info[script]["frequency"]
         last_run = meta_info[script]["last_run_date"]
         if should_run_script(freq, last_run):
             try:
-                print(f"\n--- Running {script}.py (frequency: {freq}, last_run_date: {last_run}) ---")
+                print(f"\n[{datetime.now().isoformat()}] --- Running {script}.py (frequency: {freq}, last_run_date: {last_run}) ---")
                 module = importlib.import_module(f"ingestion.{script}")
                 from_date = last_run if last_run else (date.today() - timedelta(days=365*3)).isoformat()
-                print(f"Calling fetch(from_date={from_date}) for {script}...")
+                print(f"[{datetime.now().isoformat()}] Calling fetch(from_date={from_date}) for {script}...")
                 module.fetch(from_date)
                 update_last_run_date(script)
-                print(f"--- {script}.py finished successfully and last_run_date updated ---")
+                print(f"[{datetime.now().isoformat()}] --- {script}.py finished successfully and last_run_date updated ---")
             except Exception as e:
-                print(f"❌ Error running {script}: {e}")
+                print(f"[{datetime.now().isoformat()}] ❌ Error running {script}: {e}")
                 break
         else:
-            print(f"⏩ Skipping {script}.py (frequency: {freq}, last_run_date: {last_run}) - Not due yet.")
+            print(f"[{datetime.now().isoformat()}] ⏩ Skipping {script}.py (frequency: {freq}, last_run_date: {last_run}) - Not due yet.")
     print(f"\n[{datetime.now().isoformat()}] --- Pipeline Execution Summary ---")
-    print("🎉 All due fetch modules executed (or stopped on error).\n")
+    print(f"[{datetime.now().isoformat()}] 🎉 All due fetch modules executed (or stopped on error).\n")
 
 if __name__ == "__main__":
     main()

@@ -5,17 +5,27 @@ import { Link } from 'react-router-dom';
 
 export default function Dashboard() {
   const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(false);
+
+  const loadPortfolio = async () => {
+    setLoading(true);
+    const res = await getPortfolio();
+    setData(res.allocations);
+    setLoading(false);
+  };
 
   useEffect(() => {
-    getPortfolio().then(res => setData(res.allocations));
+    loadPortfolio();
   }, []);
 
   if (!data) return <div>Loading…</div>;
 
   return (
     <div>
-      <h1>Portfolio Dashboard</h1>
-
+      <h1>Portfolio Dashboard <span style={{fontSize: '0.5em', color: '#888'}}>(Live Data)</span></h1>
+      <button onClick={loadPortfolio} disabled={loading} style={{marginBottom: '1rem'}}>
+        {loading ? 'Reloading…' : 'Reload Portfolio Data'}
+      </button>
       <BarChart width={600} height={300} data={data}>
         <XAxis dataKey="ticker" />
         <YAxis />
@@ -39,9 +49,9 @@ export default function Dashboard() {
               <td>
                 <Link to={`/details/${row.ticker}`}>{row.ticker}</Link>
               </td>
-              <td>{row.current}%</td>
-              <td>{row.recommended}%</td>
-              <td>{(row.recommended - row.current).toFixed(1)}%</td>
+              <td>{row.current?.toFixed(2)}%</td>
+              <td>{row.recommended?.toFixed(2)}%</td>
+              <td>{(row.recommended - row.current).toFixed(2)}%</td>
             </tr>
           ))}
         </tbody>

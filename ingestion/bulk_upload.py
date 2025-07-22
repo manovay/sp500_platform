@@ -45,25 +45,12 @@ ON CONFLICT (table_name) DO UPDATE
         conn.commit()
     print("✅ ingestion_metadata seeded successfully")
 
-def upload_csv_to_table(csv_path, table_name, conn, batch_size=1000):
-    df_iter = pd.read_csv(csv_path, chunksize=batch_size)
-    first = True
-    for df in df_iter:
-        # Clean up column names and data
-        df.columns = [col.strip() for col in df.columns]
-        records = df.where(pd.notnull(df), None).to_dict(orient='records')
-        if not records:
-            continue
-        columns = ','.join(df.columns)
-        placeholders = ','.join(['%s'] * len(df.columns))
-        insert_sql = f"INSERT INTO {table_name} ({columns}) VALUES ({placeholders})"
-        with conn.cursor() as cur:
-            cur.executemany(insert_sql, [tuple(row.values()) for row in records])
-        conn.commit()
-        if first:
-            print(f"Inserted first batch of {len(records)} rows into {table_name}...")
-            first = False
-    print(f"Finished uploading {csv_path} to {table_name} in batches.")
+def upload_csv_to_table(csv_path, table_name, conn):
+    with conn.cursor() as cur:
+        with open(csv_path, 'r', encoding='utf-8') as f:
+            cur.copy_expert(f"COPY {table_name} FROM STDIN WITH CSV HEADER", f)
+    conn.commit()
+    print(f"Uploaded {csv_path} to {table_name} using COPY.")
 
 def main():
     init_database()
