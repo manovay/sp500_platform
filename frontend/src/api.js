@@ -1,17 +1,6 @@
 // src/api.js
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
-export async function getPortfolio() {
-  const res = await fetch(`${import.meta.env.VITE_API_URL}/api/portfolio`);
-  return res.json();
-}
-
-export async function getTickerDetails(ticker) {
-  const res = await fetch(`${import.meta.env.VITE_API_URL}/api/ticker/${ticker}`);
-  return res.json();
-}
-
-// New API functions for stock list page
 export async function getAllStocks() {
   try {
     const response = await fetch(`${API_BASE}/api/stocks`);
@@ -23,6 +12,32 @@ export async function getAllStocks() {
     }
   } catch (error) {
     console.error('Error fetching stocks:', error);
+    throw error;
+  }
+}
+
+export async function getStockInfo(ticker) {
+  try {
+    const response = await fetch(`${API_BASE}/api/stocks/${ticker}/info`);
+    const data = await response.json();
+    if (data.status === 'ok') {
+      return data.info;
+    } else {
+      throw new Error(data.error || 'Failed to fetch stock info');
+    }
+  } catch (error) {
+    console.error('Error fetching stock info:', error);
+    throw error;
+  }
+}
+
+export async function getPromptData(ticker) {
+  try {
+    const response = await fetch(`${API_BASE}/api/stocks/${ticker}/full-data`);
+    if (!response.ok) throw new Error('Failed to fetch prompt data');
+    return await response.json();
+  } catch (error) {
+    console.error('Error fetching prompt data:', error);
     throw error;
   }
 }
