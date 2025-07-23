@@ -40,11 +40,12 @@ class Ticker(Base):
     __tablename__ = 'tickers'
     ticker = Column(String(10), primary_key=True)
 
-def fetch_and_upsert_prices():
+def fetch(from_date):
     session = Session()
     try:
         today = date.today()
-        three_years_ago = today - timedelta(days=365*3)
+        if isinstance(from_date, str):
+            from_date = datetime.strptime(from_date, "%Y-%m-%d").date()
 
         # Get all tickers from the database (limit to 5 for testing)
         tickers = [t[0] for t in session.query(Ticker.ticker).all()][:5]
@@ -52,12 +53,8 @@ def fetch_and_upsert_prices():
         print(f"Found {len(tickers)} tickers to process for price data (limited to 5 for testing).")
 
         for symbol in tickers:
-            # Format dates for the API query
-            from_date_str = three_years_ago.isoformat()
+            from_date_str = from_date.isoformat()
             to_date_str = today.isoformat()
-
-            # Updated URL to fetch only the required date range
-            # Using /api/v3/historical-price-full/ which is documented to support from/to
             url = f"https://financialmodelingprep.com/api/v3/historical-price-full/{symbol}?from={from_date_str}&to={to_date_str}&apikey={FMP_API_KEY}"
 
             print(f"\nFetching prices for {symbol} (from {from_date_str} to {to_date_str})...")
@@ -69,10 +66,9 @@ def fetch_and_upsert_prices():
             data_response = response.json()
             print(f"  Finished parsing JSON for {symbol}.")
 
-            # FMP API for single symbol history usually returns: {"symbol": "XYZ", "historical": [...]}
             if isinstance(data_response, dict) and 'historical' in data_response:
                 historical_data = data_response['historical']
-            elif isinstance(data_response, list): # Fallback if it's a direct list (less common for single symbol with date range)
+            elif isinstance(data_response, list):
                 historical_data = data_response
             else:
                 print(f"  Unexpected JSON structure for {symbol}: {type(data_response)}. Skipping.")
@@ -85,7 +81,6 @@ def fetch_and_upsert_prices():
             print(f"  Processing {len(historical_data)} price records for {symbol}...")
             upserts = 0
             for record_idx, record in enumerate(historical_data):
-                # parse the record date
                 record_date_str = record.get('date')
                 if not record_date_str:
                     print(f"    Skipping record for {symbol} (index {record_idx}) due to missing date: {record}")
@@ -93,13 +88,13 @@ def fetch_and_upsert_prices():
                 try:
                     record_date = datetime.strptime(record_date_str, '%Y-%m-%d').date()
                     price = Price(
-                        ticker      = symbol, # Use the symbol from the outer loop, as 'historical' items might not have it
+                        ticker      = symbol,
                         price_date  = record_date,
                         open_price  = record.get('open'),
                         high_price  = record.get('high'),
                         low_price   = record.get('low'),
                         close_price = record.get('close'),
-                        volume      = record.get('volume') # FMP 'historical-price-full' uses 'volume'
+                        volume      = record.get('volume')
                     )
                     session.merge(price)
                     upserts += 1
@@ -110,8 +105,7 @@ def fetch_and_upsert_prices():
             print(f"  {symbol}: Upserted and committed {upserts} price records.")
             total_upserts += upserts
 
-        # session.commit() # Final commit is redundant if committing per ticker
-        print(f"\n✅ Finished processing all tickers. Total price records upserted: {total_upserts}")
+        print(f"\n Finished processing all tickers. Total price records upserted: {total_upserts}")
     except Exception as e:
         print(f"Error: {e}")
         session.rollback()
@@ -120,4 +114,5 @@ def fetch_and_upsert_prices():
         session.close()
 
 if __name__ == "__main__":
-    fetch_and_upsert_prices()
+    default_from_date = (date.today() - timedelta(days=365*3)).isoformat()
+    fetch(default_from_date)

@@ -1,85 +1,99 @@
-import subprocess
-import sys
 import os
+from datetime import date, timedelta, datetime
+from dotenv import load_dotenv
+import importlib
+from sqlalchemy import create_engine, text
 
-# List of fetch scripts to run in order
-# fetch_tickers.py must run first as other data depends on the tickers.
-# The order of the subsequent scripts is generally flexible as they primarily depend on tickers.
-FETCH_SCRIPTS = [
-    "init_db.py",
-    "fetch_tickers.py",
-    "fetch_prices.py",
-    "fetch_historical_market_cap.py", # Added new script
-    "fetch_metrics.py",
-    "fetch_profile.py",
-    "fetch_analyst_labels.py",
-    "fetch_analyst_estimates.py",
-    "fetch_historical_analyst.py",
-    "fetch_stock_news.py"
+# Load environment variables
+load_dotenv(override=True)
+DATABASE_URL = os.getenv('DATABASE_URL')
+
+# Map script names to their module names (without .py)
+FETCH_MODULES = [
+    ("fetch_tickers", "tickers"),
+    ("fetch_prices", "prices"),
+    ("fetch_historical_market_cap", "allocations"),
+    ("fetch_metrics", "key_metrics"),
+    ("fetch_profile", "profiles"),
+    ("fetch_analyst_labels", "analyst_labels"),
+    ("fetch_analyst_estimates", "analyst_estimates"),
+    ("fetch_historical_analyst", "grades_historical"),
+    ("fetch_stock_news", "stock_news"),
 ]
 
-def run_script(script_name: str) -> bool:
-    """
-    Runs a given Python script using the same Python interpreter
-    and checks its output.
-    Args:
-        script_name: The name of the script file to run.
-    Returns:
-        True if the script ran successfully, False otherwise.
-    """
-    script_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), script_name)
-    print(f"\n--- Running {script_name} ---")
-    
-    if not os.path.exists(script_path):
-        print(f"❌ Error: Script {script_path} not found.")
-        return False
-        
-    try:
-        # Use sys.executable to ensure the script is run with the same Python interpreter,
-        # especially important if you are using a virtual environment.
-        python_executable = sys.executable
-        # Let the subprocess print directly to the terminal for real-time output
-        process = subprocess.Popen(
-            [python_executable, script_path],
-            text=True, # Ensures strings for stdout/stderr if we were capturing
-            cwd=os.path.dirname(script_path) # Ensure script runs in its own directory context
-        )
-        
-        process.wait() # Wait for the script to complete
-        
-        if process.returncode != 0:
-            # Error messages from the script would have already printed to the terminal
-            print(f"--- {script_name} finished with an error ---")
-            print(f"❌ Error executing {script_name}: Return code: {process.returncode}")
-            return False
-            
-        print(f"--- {script_name} finished successfully ---")
-        print(f"✅ Successfully executed {script_name}")
+FREQUENCY_TO_DAYS = {
+    "daily": 1,
+    "weekly": 7,
+    "quarterly": 90,
+    "annual": 365,
+    "manual": 0,  # always run if manual
+}
+
+engine = create_engine(DATABASE_URL)
+
+def get_meta_info():
+    with engine.connect() as conn:
+        meta_info = {}
+        for script, table in FETCH_MODULES:
+            result = conn.execute(text("""
+                SELECT frequency, last_run_date
+                FROM ingestion_metadata
+                WHERE script_name = :script
+            """), {"script": f"{script}.py"})
+            row = result.fetchone()
+            if row:
+                meta_info[script] = {
+                    "frequency": row[0],
+                    "last_run_date": row[1]
+                }
+            else:
+                meta_info[script] = {
+                    "frequency": "manual",
+                    "last_run_date": (date.today() - timedelta(days=365*3)).isoformat()
+                }
+        return meta_info
+
+def should_run_script(frequency, last_run_date):
+    if last_run_date is None:
         return True
-        
-    except Exception as e:
-        print(f"❌ An unexpected error occurred while trying to run {script_name}: {e}")
-        return False
+    freq_days = FREQUENCY_TO_DAYS.get(frequency, 1)
+    try:
+        last_run = last_run_date if isinstance(last_run_date, date) else datetime.strptime(str(last_run_date), "%Y-%m-%d").date()
+    except Exception:
+        last_run = date.today() - timedelta(days=365*3)
+    days_since = (date.today() - last_run).days
+    return days_since >= freq_days
+
+def update_last_run_date(script):
+    with engine.connect() as conn:
+        conn.execute(
+            text("UPDATE ingestion_metadata SET last_run_date = :today WHERE script_name = :script"),
+            {"today": date.today().isoformat(), "script": f"{script}.py"}
+        )
+        conn.commit()
 
 def main():
-    print("🚀 Starting the data fetching pipeline...\n")
-    print("🔔 IMPORTANT:")
-    print("   1. Ensure your Docker containers (PostgreSQL, pgAdmin) are running.")
-    print("      (You can start them with: docker-compose up -d)")
-    print("   3. Make sure your .env file is correctly configured with API keys and DATABASE_URL.\n")
-
-    all_successful = True
-    for script_file in FETCH_SCRIPTS:
-        if not run_script(script_file):
-            all_successful = False
-            print(f"\n🛑 Halting pipeline due to error in {script_file}.")
-            break
-    
-    print("\n--- Pipeline Execution Summary ---")
-    if all_successful:
-        print("🎉 All fetch scripts executed successfully!")
-    else:
-        print("⚠️ Some scripts failed to execute. Please review the logs above.")
+    print(f"\n[{datetime.now().isoformat()}] 🚀 Starting the scheduled data fetching pipeline...\n")
+    meta_info = get_meta_info()
+    for script, _ in FETCH_MODULES:
+        freq = meta_info[script]["frequency"]
+        last_run = meta_info[script]["last_run_date"]
+        if should_run_script(freq, last_run):
+            try:
+                print(f"\n[{datetime.now().isoformat()}] --- Running {script}.py (frequency: {freq}, last_run_date: {last_run}) ---")
+                module = importlib.import_module(f"ingestion.{script}")
+                from_date = last_run if last_run else (date.today() - timedelta(days=365*3)).isoformat()
+                print(f"[{datetime.now().isoformat()}] Calling fetch(from_date={from_date}) for {script}...")
+                module.fetch(from_date)
+                update_last_run_date(script)
+                print(f"[{datetime.now().isoformat()}] --- {script}.py finished successfully and last_run_date updated ---")
+            except Exception as e:
+                print(f"[{datetime.now().isoformat()}] ❌ Error running {script}: {e}")
+                break
+        else:
+            print(f"[{datetime.now().isoformat()}] ⏩ Skipping {script}.py (frequency: {freq}, last_run_date: {last_run}) - Not due yet.")
+    print(f"\n[{datetime.now().isoformat()}] --- Pipeline Execution Summary ---")
+    print(f"[{datetime.now().isoformat()}] 🎉 All due fetch modules executed (or stopped on error).\n")
 
 if __name__ == "__main__":
     main()

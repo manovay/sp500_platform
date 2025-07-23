@@ -1,5 +1,5 @@
 import os
-from datetime import datetime
+from datetime import datetime, date, timedelta
 from dotenv import load_dotenv
 from sqlalchemy import create_engine, MetaData
 from sqlalchemy.orm import sessionmaker
@@ -28,12 +28,18 @@ key_metrics_table = metadata.tables['key_metrics']
 
 API_REQUEST_DELAY = 0.21  # seconds (for ~285 requests per minute)
 
-def fetch_and_upsert_metrics():
+def fetch(from_date):
     session = Session()
+    if isinstance(from_date, str):
+        from_date = datetime.strptime(from_date, "%Y-%m-%d").date()
     inserted = updated = skipped = 0
     try:
+<<<<<<< HEAD
         # Get all tickers from the tickers table
             ticker_symbols = ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'TSLA']
+=======
+        ticker_symbols = [t[0] for t in session.query(tickers_table.c.ticker).all()]
+>>>>>>> 4a89c3ff58eeb0a6259632329e20ef2c2b93ded2
         total_tickers = len(ticker_symbols)
         print(f"Found {total_tickers} tickers in DB to process for key metrics.")
 
@@ -61,6 +67,8 @@ def fetch_and_upsert_metrics():
                         print(f"    Skipping entry for {ticker} due to missing date: {entry}")
                         continue
                     date_obj = datetime.strptime(date_str, '%Y-%m-%d').date()
+                    if date_obj < from_date:
+                        continue
 
                     stmt = insert(key_metrics_table).values(
                         ticker=ticker,
@@ -73,31 +81,30 @@ def fetch_and_upsert_metrics():
                     res = session.execute(stmt)
 
                     if res.rowcount == 1: # Row was affected (inserted or updated)
-                        inserted += 1 # As per fetch_stock_news, this counts an affected row.
-                                      # A more precise insert/update count would need res.inserted_primary_key
-                    else: # rowcount == 0 (e.g. conflict, but DO UPDATE conditions not met or DO NOTHING)
+                        inserted += 1
+                    else:
                         updated += 1
                     items_processed_for_ticker +=1
                 
                 if items_processed_for_ticker > 0:
                     print(f"  -> Finished processing {items_processed_for_ticker} metric entries for {ticker}.")
-                elif not metrics_data: # Already handled by the check above
+                elif not metrics_data:
                     pass
-                else: # metrics_data was a list, but all entries might have been skipped
+                else:
                     print(f"  -> No processable metric entries found for {ticker} (out of {len(metrics_data)} fetched).")
 
             except requests.exceptions.HTTPError as http_err:
                 print(f"  -> HTTP error fetching metrics for {ticker}: {http_err}")
                 skipped += 1
-            except requests.exceptions.RequestException as req_err: # Catch other request-related errors
+            except requests.exceptions.RequestException as req_err:
                 print(f"  -> Request error fetching metrics for {ticker}: {req_err}")
                 skipped += 1
-            except Exception as e: # Catch any other error during this ticker's processing
+            except Exception as e:
                 print(f"  -> Error processing metrics for {ticker}: {e}")
-                skipped += 1 # Count this ticker as skipped
+                skipped += 1
                 continue
 
-        session.commit() # Commit once after processing all tickers
+        session.commit()
         print(f"\n✅ Key metrics processing complete: Inserted/Updated={inserted}, Potentially Re-updated={updated}, Skipped Tickers={skipped}")
 
     except Exception as e:
@@ -108,4 +115,5 @@ def fetch_and_upsert_metrics():
         session.close()
 
 if __name__ == "__main__":
-    fetch_and_upsert_metrics()
+    default_from_date = (date.today() - timedelta(days=365*3)).isoformat()
+    fetch(default_from_date)

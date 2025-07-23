@@ -22,16 +22,20 @@ FMP_API_KEY  = os.getenv('FMP_API_KEY')
 # SQLAlchemy setup
 engine   = create_engine(DATABASE_URL)
 Session  = sessionmaker(bind=engine)
-session  = Session()
 metadata = MetaData()
 metadata.reflect(bind=engine)
 
 tickers_table   = metadata.tables['tickers']
 stock_news_table = metadata.tables['stock_news']
 
-def fetch_and_upsert_stock_news():
+def fetch(from_date):
     session = Session()
+    if isinstance(from_date, str):
+        from_date = datetime.strptime(from_date, "%Y-%m-%d").date()
+    today = date.today()
+    inserted = updated = skipped = 0
     try:
+<<<<<<< HEAD
         # fixed start date because API only returns since Jan 1, 2025
         start_date = date(2025, 1, 1)
         today      = date.today()
@@ -39,11 +43,14 @@ def fetch_and_upsert_stock_news():
         inserted = updated = skipped = 0
             ticker_symbols = ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'TSLA']
 
+=======
+        tickers = [t[0] for t in session.query(tickers_table.c.ticker).all()]
+>>>>>>> 4a89c3ff58eeb0a6259632329e20ef2c2b93ded2
         for ticker in tickers:
             url = (
                 f"https://financialmodelingprep.com/stable/news/stock"
                 f"?symbols={ticker}"
-                f"&from={start_date.isoformat()}"
+                f"&from={from_date.isoformat()}"
                 f"&to={today.isoformat()}"
                 f"&limit=50"
                 f"&apikey={FMP_API_KEY}"
@@ -59,25 +66,19 @@ def fetch_and_upsert_stock_news():
                 continue
 
             news_to_process_for_ticker = []
-            for rec in data: # Initial filter based on date string
+            for rec in data:
                 pub_dt = datetime.strptime(rec["publishedDate"], "%Y-%m-%d %H:%M:%S")
-                if pub_dt.date() >= start_date:
+                if pub_dt.date() >= from_date:
                     news_to_process_for_ticker.append(rec)
             
             if not news_to_process_for_ticker:
-                print(f"  -> No stock news for {ticker} since {start_date} (out of {len(data)} fetched).")
-                # If you want to count this as skipped if no relevant news:
-                # skipped += 1 
+                print(f"  -> No stock news for {ticker} since {from_date} (out of {len(data)} fetched).")
                 continue
 
-            print(f"  -> Processing {len(news_to_process_for_ticker)} news items for {ticker} since {start_date}.")
+            print(f"  -> Processing {len(news_to_process_for_ticker)} news items for {ticker} since {from_date}.")
             items_processed_for_ticker = 0
             for rec in news_to_process_for_ticker:
                 pub_dt = datetime.strptime(rec["publishedDate"], "%Y-%m-%d %H:%M:%S")
-                # This check is redundant if already filtered, but safe
-                # if pub_dt.date() < start_date: 
-                #    continue
-                
                 stmt = insert(stock_news_table).values(
                     url            = rec["url"],
                     symbol         = rec["symbol"],
@@ -87,7 +88,7 @@ def fetch_and_upsert_stock_news():
                     image          = rec.get("image"),
                     site           = rec.get("site"),
                     text           = rec.get("text"),
-                    source         = 'FMP'  # Ensure source is in the VALUES clause
+                    source         = 'FMP'
                 ).on_conflict_do_update(
                     index_elements=['url'],
                     set_={
@@ -113,12 +114,14 @@ def fetch_and_upsert_stock_news():
                 print(f"  -> Finished processing {items_processed_for_ticker} news items for {ticker}.")
 
         session.commit()
-        print(f"✅ Stock news since {start_date}: Inserted={inserted}, Updated={updated}, Skipped={skipped}")
+        print(f"\u2705 Stock news since {from_date}: Inserted={inserted}, Updated={updated}, Skipped={skipped}")
     except Exception as e:
         print(f"  -> Error during stock news processing for {ticker if 'ticker' in locals() else 'unknown ticker'}: {e}")
         session.rollback()
         raise
     finally:
         session.close()
+
 if __name__ == '__main__':
-    fetch_and_upsert_stock_news()
+    default_from_date = (date.today() - timedelta(days=365*3)).isoformat()
+    fetch(default_from_date)
