@@ -7,6 +7,9 @@ from dotenv import load_dotenv
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 from scripts import run_fetch
+import json
+from datetime import date, timedelta
+import requests
 
 # Load environment variables before anything else
 load_dotenv(override=True)
@@ -94,122 +97,219 @@ def api_stock_news(ticker):
         news = [dict(row) for row in result.mappings()]
         return jsonify({"status": "ok", "news": news})
 
+def get_full_data_for_ticker(conn, ticker):
+    """
+    Helper to fetch and build the full_data dict for a given ticker, using current date and 7-day intervals for weekly/daily slices.
+    """
+    today = date.today()
+    week_ago = today - timedelta(days=7)
+    year_ago = today - timedelta(days=365)
+
+    # Get latest snapshot date (use latest allocation_date as snapshot)
+    snapshot_row = conn.execute(text("""
+        SELECT MAX(allocation_date) as snapshot FROM allocations WHERE ticker = :ticker
+    """), {"ticker": ticker}).mappings().fetchone()
+    snapshot = snapshot_row["snapshot"].isoformat() if snapshot_row and snapshot_row["snapshot"] else None
+
+    # Previous allocation pct (previous week)
+    prev_alloc_row = conn.execute(text("""
+        SELECT allocation_pct FROM allocations WHERE ticker = :ticker AND allocation_date < :week_ago ORDER BY allocation_date DESC LIMIT 1
+    """), {"ticker": ticker, "week_ago": week_ago}).mappings().fetchone()
+    previous_allocation_pct = float(prev_alloc_row["allocation_pct"]) if prev_alloc_row else None
+
+    # Profile summary (from profiles)
+    profile_row = conn.execute(text("""
+        SELECT profile_data FROM profiles WHERE ticker = :ticker AND date_fetched >= :week_ago ORDER BY date_fetched DESC LIMIT 1
+    """), {"ticker": ticker, "week_ago": week_ago}).fetchone()
+    profile_summary = profile_row[0] if profile_row else None
+
+    # Weekly: grades_historical, allocations, predictions (last 7 days)
+    weekly = {}
+    weekly["grades_historical"] = [dict(row) for row in conn.execute(text("""
+        SELECT * FROM grades_historical WHERE symbol = :ticker AND rating_date >= :week_ago ORDER BY rating_date DESC
+    """), {"ticker": ticker, "week_ago": week_ago}).mappings()]
+    weekly["allocations"] = [dict(row) for row in conn.execute(text("""
+        SELECT * FROM allocations WHERE ticker = :ticker AND allocation_date >= :week_ago ORDER BY allocation_date DESC
+    """), {"ticker": ticker, "week_ago": week_ago}).mappings()]
+    weekly["predictions"] = [dict(row) for row in conn.execute(text("""
+        SELECT * FROM predictions WHERE request_data->>'ticker' = :ticker AND created_at >= :week_ago ORDER BY created_at DESC
+    """), {"ticker": ticker, "week_ago": week_ago}).mappings()]
+
+    # Daily: prices, analyst_labels, stock_news (last 7 days)
+    daily = {}
+    daily["prices"] = [dict(row) for row in conn.execute(text("""
+        SELECT * FROM prices WHERE ticker = :ticker AND price_date >= :week_ago ORDER BY price_date DESC
+    """), {"ticker": ticker, "week_ago": week_ago}).mappings()]
+    daily["analyst_labels"] = [dict(row) for row in conn.execute(text("""
+        SELECT * FROM analyst_labels WHERE ticker = :ticker AND label_date >= :week_ago ORDER BY label_date DESC
+    """), {"ticker": ticker, "week_ago": week_ago}).mappings()]
+    daily["stock_news"] = [dict(row) for row in conn.execute(text("""
+        SELECT * FROM stock_news WHERE symbol = :ticker AND published_date >= :week_ago ORDER BY published_date DESC
+    """), {"ticker": ticker, "week_ago": week_ago}).mappings()]
+
+    # Quarterly: tickers, analyst_estimates (last 4 quarters)
+    quarterly = {}
+    quarterly["tickers"] = [dict(row) for row in conn.execute(text("""
+        SELECT * FROM tickers WHERE ticker = :ticker
+    """), {"ticker": ticker}).mappings()]
+    quarterly["analyst_estimates"] = [dict(row) for row in conn.execute(text("""
+        SELECT * FROM analyst_estimates WHERE symbol = :ticker AND report_date >= :year_ago ORDER BY report_date DESC
+    """), {"ticker": ticker, "year_ago": year_ago}).mappings()]
+
+    # Annual: key_metrics, profiles (last 1 year)
+    annual = {}
+    annual["key_metrics"] = [dict(row) for row in conn.execute(text("""
+        SELECT * FROM key_metrics WHERE ticker = :ticker AND date >= :year_ago ORDER BY date DESC
+    """), {"ticker": ticker, "year_ago": year_ago}).mappings()]
+    annual["profiles"] = [dict(row) for row in conn.execute(text("""
+        SELECT * FROM profiles WHERE ticker = :ticker AND date_fetched >= :year_ago ORDER BY date_fetched DESC
+    """), {"ticker": ticker, "year_ago": year_ago}).mappings()]
+
+    # Yearly return pct (from prices, 1 year ago vs now)
+    price_now_row = conn.execute(text("""
+        SELECT close_price FROM prices WHERE ticker = :ticker ORDER BY price_date DESC LIMIT 1
+    """), {"ticker": ticker}).mappings().fetchone()
+    price_year_ago_row = conn.execute(text("""
+        SELECT close_price FROM prices WHERE ticker = :ticker AND price_date <= :year_ago ORDER BY price_date DESC LIMIT 1
+    """), {"ticker": ticker, "year_ago": year_ago}).mappings().fetchone()
+    yearly_return_pct = None
+    if price_now_row and price_year_ago_row and price_year_ago_row["close_price"]:
+        yearly_return_pct = 100.0 * (float(price_now_row["close_price"]) - float(price_year_ago_row["close_price"])) / float(price_year_ago_row["close_price"])
+
+    # Latest label
+    latest_label = conn.execute(text("""
+        SELECT * FROM analyst_labels WHERE ticker = :ticker ORDER BY label_date DESC LIMIT 1
+    """), {"ticker": ticker}).mappings().fetchone()
+
+    # Latest estimate
+    latest_est = conn.execute(text("""
+        SELECT * FROM analyst_estimates WHERE symbol = :ticker ORDER BY report_date DESC LIMIT 1
+    """), {"ticker": ticker}).mappings().fetchone()
+
+    # Grades summary (latest grades_historical)
+    grades_summary = conn.execute(text("""
+        SELECT * FROM grades_historical WHERE symbol = :ticker ORDER BY rating_date DESC LIMIT 1
+    """), {"ticker": ticker}).mappings().fetchone()
+
+    # Key metrics (latest)
+    key_metrics = conn.execute(text("""
+        SELECT * FROM key_metrics WHERE ticker = :ticker ORDER BY date DESC LIMIT 1
+    """), {"ticker": ticker}).mappings().fetchone()
+
+    # News: last 7 days
+    news = [dict(row) for row in conn.execute(text("""
+        SELECT * FROM stock_news WHERE symbol = :ticker AND published_date >= :week_ago ORDER BY published_date DESC
+    """), {"ticker": ticker, "week_ago": week_ago}).mappings()]
+
+    return {
+        "ticker": ticker,
+        "snapshot": snapshot,
+        "previous_allocation_pct": previous_allocation_pct,
+        "profile_summary": profile_summary,
+        "weekly": weekly,
+        "daily": daily,
+        "quarterly": quarterly,
+        "annual": annual,
+        "yearly_return_pct": yearly_return_pct,
+        "latest_label": dict(latest_label) if latest_label else None,
+        "latest_est": dict(latest_est) if latest_est else None,
+        "grades_summary": dict(grades_summary) if grades_summary else None,
+        "key_metrics": dict(key_metrics) if key_metrics else None,
+        "news": news
+    }
+
+def call_llm(prompt, max_new_tokens=256, temperature=0):
+    """
+    Calls the HuggingFace inference API for the LLM and returns the response.
+    """
+    url = "https://api-inference.huggingface.co/models/mdot77/fingpt-llama3-8b-finetuned"
+    headers = {"Authorization": f"Bearer {os.environ['HF_TOKEN']}"}
+    payload = {
+        "inputs": prompt,
+        "parameters": {
+            "max_new_tokens": max_new_tokens,
+            "temperature": temperature
+        }
+    }
+    resp = requests.post(url, headers=headers, json=payload)
+    try:
+        return resp.json()
+    except Exception:
+        return {"error": "Invalid response from LLM", "raw": resp.text}
+
+
+
 @app.route("/api/stocks/<ticker>/full-data", methods=["GET"])
 def api_stock_full_data(ticker):
     """Return a packed JSON object with all relevant slices for the frontend prompt."""
     with engine.connect() as conn:
-        # Get latest snapshot date (use latest allocation_date as snapshot)
-        snapshot_row = conn.execute(text("""
-            SELECT MAX(allocation_date) as snapshot FROM allocations WHERE ticker = :ticker
-        """), {"ticker": ticker}).mappings().fetchone()
-        snapshot = snapshot_row["snapshot"].isoformat() if snapshot_row and snapshot_row["snapshot"] else None
+        full_data = get_full_data_for_ticker(conn, ticker)
+        return jsonify(full_data)
 
-        # Previous allocation pct (previous week)
-        prev_alloc_row = conn.execute(text("""
-            SELECT allocation_pct FROM allocations WHERE ticker = :ticker ORDER BY allocation_date DESC OFFSET 1 LIMIT 1
-        """), {"ticker": ticker}).mappings().fetchone()
-        previous_allocation_pct = float(prev_alloc_row["allocation_pct"]) if prev_alloc_row else None
+@app.route("/api/stocks/<ticker>/build-prompt", methods=["GET"])
+def api_build_prompt(ticker):
+    """
+    Builds and returns the system prompt for the LLM, with the latest full-data for the given ticker.
+    Does NOT call the LLM.
+    """
+    with engine.connect() as conn:
+        full_data = get_full_data_for_ticker(conn, ticker)
+    system_prompt = (
+        "[INST] <<SYS>>\n"
+        "You are a portfolio optimization assistant.\n\n"
+        "Return ONLY valid JSON matching this exact schema:\n"
+        "{\n"
+        "  \"ticker\": \"<string>\",\n"
+        "  \"snapshot\": \"<YYYY-MM-DD>\",\n"
+        "  \"verdict\": \"<Increase|Decrease|Hold|Add|Remove>\",\n"
+        "  \"new_alloc_pct\": <number>,\n"
+        "  \"reasoning\": \"<short explanation>\"\n"
+        "}\n\n"
+        "Never add extra keys or commentary.\n"
+        "Emit only JSON — no prose before or after.\n"
+        "<</SYS>>\n\n"
+        "TABLES (freq → table_name(columns)):\n"
+        "Quarterly → tickers(ticker, company_name, sector, date_added); analyst_estimates(...); \n"
+        "Daily → prices(...); analyst_labels(...); stock_news(...);\n"
+        "Weekly → grades_historical(...); allocations(...); predictions(...);\n"
+        "Annual → key_metrics(...); profiles(...).\n\n"
+        f"DATA:\n{json.dumps(full_data, ensure_ascii=False)}\n\n"
+        "Now output the JSON response.\n[/INST]"
+    )
+    return jsonify({"prompt": system_prompt})
 
-        # Profile summary (from profiles)
-        profile_row = conn.execute(text("""
-            SELECT profile_data FROM profiles WHERE ticker = :ticker ORDER BY date_fetched DESC LIMIT 1
-        """), {"ticker": ticker}).fetchone()
-        profile_summary = profile_row[0] if profile_row else None
-
-        # Weekly: grades_historical, allocations, predictions (last 4 weeks)
-        weekly = {}
-        weekly["grades_historical"] = [dict(row) for row in conn.execute(text("""
-            SELECT * FROM grades_historical WHERE symbol = :ticker ORDER BY rating_date DESC LIMIT 4
-        """), {"ticker": ticker}).mappings()]
-        weekly["allocations"] = [dict(row) for row in conn.execute(text("""
-            SELECT * FROM allocations WHERE ticker = :ticker ORDER BY allocation_date DESC LIMIT 4
-        """), {"ticker": ticker}).mappings()]
-        weekly["predictions"] = [dict(row) for row in conn.execute(text("""
-            SELECT * FROM predictions WHERE request_data->>'ticker' = :ticker ORDER BY created_at DESC LIMIT 4
-        """), {"ticker": ticker}).mappings()]
-
-        # Daily: prices, analyst_labels, stock_news (last 7 days)
-        daily = {}
-        daily["prices"] = [dict(row) for row in conn.execute(text("""
-            SELECT * FROM prices WHERE ticker = :ticker ORDER BY price_date DESC LIMIT 7
-        """), {"ticker": ticker}).mappings()]
-        daily["analyst_labels"] = [dict(row) for row in conn.execute(text("""
-            SELECT * FROM analyst_labels WHERE ticker = :ticker ORDER BY label_date DESC LIMIT 7
-        """), {"ticker": ticker}).mappings()]
-        daily["stock_news"] = [dict(row) for row in conn.execute(text("""
-            SELECT * FROM stock_news WHERE symbol = :ticker ORDER BY published_date DESC LIMIT 7
-        """), {"ticker": ticker}).mappings()]
-
-        # Quarterly: tickers, analyst_estimates (last 4 quarters)
-        quarterly = {}
-        quarterly["tickers"] = [dict(row) for row in conn.execute(text("""
-            SELECT * FROM tickers WHERE ticker = :ticker
-        """), {"ticker": ticker}).mappings()]
-        quarterly["analyst_estimates"] = [dict(row) for row in conn.execute(text("""
-            SELECT * FROM analyst_estimates WHERE symbol = :ticker ORDER BY report_date DESC LIMIT 4
-        """), {"ticker": ticker}).mappings()]
-
-        # Annual: key_metrics, profiles (last 4 years)
-        annual = {}
-        annual["key_metrics"] = [dict(row) for row in conn.execute(text("""
-            SELECT * FROM key_metrics WHERE ticker = :ticker ORDER BY date DESC LIMIT 4
-        """), {"ticker": ticker}).mappings()]
-        annual["profiles"] = [dict(row) for row in conn.execute(text("""
-            SELECT * FROM profiles WHERE ticker = :ticker ORDER BY date_fetched DESC LIMIT 4
-        """), {"ticker": ticker}).mappings()]
-
-        # Yearly return pct (from prices, 1 year ago vs now)
-        price_now_row = conn.execute(text("""
-            SELECT close_price FROM prices WHERE ticker = :ticker ORDER BY price_date DESC LIMIT 1
-        """), {"ticker": ticker}).mappings().fetchone()
-        price_year_ago_row = conn.execute(text("""
-            SELECT close_price FROM prices WHERE ticker = :ticker AND price_date <= (SELECT MAX(price_date) FROM prices WHERE ticker = :ticker) - INTERVAL '1 year' ORDER BY price_date DESC LIMIT 1
-        """), {"ticker": ticker}).mappings().fetchone()
-        yearly_return_pct = None
-        if price_now_row and price_year_ago_row and price_year_ago_row["close_price"]:
-            yearly_return_pct = 100.0 * (float(price_now_row["close_price"]) - float(price_year_ago_row["close_price"])) / float(price_year_ago_row["close_price"])
-
-        # Latest label
-        latest_label = conn.execute(text("""
-            SELECT * FROM analyst_labels WHERE ticker = :ticker ORDER BY label_date DESC LIMIT 1
-        """), {"ticker": ticker}).mappings().fetchone()
-
-        # Latest estimate
-        latest_est = conn.execute(text("""
-            SELECT * FROM analyst_estimates WHERE symbol = :ticker ORDER BY report_date DESC LIMIT 1
-        """), {"ticker": ticker}).mappings().fetchone()
-
-        # Grades summary (latest grades_historical)
-        grades_summary = conn.execute(text("""
-            SELECT * FROM grades_historical WHERE symbol = :ticker ORDER BY rating_date DESC LIMIT 1
-        """), {"ticker": ticker}).mappings().fetchone()
-
-        # Key metrics (latest)
-        key_metrics = conn.execute(text("""
-            SELECT * FROM key_metrics WHERE ticker = :ticker ORDER BY date DESC LIMIT 1
-        """), {"ticker": ticker}).mappings().fetchone()
-
-        # News: last 7 days
-        news = [dict(row) for row in conn.execute(text("""
-            SELECT * FROM stock_news WHERE symbol = :ticker AND published_date >= (CURRENT_DATE - INTERVAL '7 days') ORDER BY published_date DESC
-        """), {"ticker": ticker}).mappings()]
-
-        return jsonify({
-            "ticker": ticker,
-            "snapshot": snapshot,
-            "previous_allocation_pct": previous_allocation_pct,
-            "profile_summary": profile_summary,
-            "weekly": weekly,
-            "daily": daily,
-            "quarterly": quarterly,
-            "annual": annual,
-            "yearly_return_pct": yearly_return_pct,
-            "latest_label": dict(latest_label) if latest_label else None,
-            "latest_est": dict(latest_est) if latest_est else None,
-            "grades_summary": dict(grades_summary) if grades_summary else None,
-            "key_metrics": dict(key_metrics) if key_metrics else None,
-            "news": news
-        })
+@app.route("/api/stocks/<ticker>/llm-verdict", methods=["POST"])
+def api_llm_verdict(ticker):
+    """
+    Calls the LLM with the system prompt and the latest full-data for the given ticker.
+    Returns the LLM's JSON response.
+    """
+    with engine.connect() as conn:
+        full_data = get_full_data_for_ticker(conn, ticker)
+    system_prompt = (
+        "[INST] <<SYS>>\n"
+        "You are a portfolio optimization assistant.\n\n"
+        "Return ONLY valid JSON matching this exact schema:\n"
+        "{\n"
+        "  \"ticker\": \"<string>\",\n"
+        "  \"snapshot\": \"<YYYY-MM-DD>\",\n"
+        "  \"verdict\": \"<Increase|Decrease|Hold|Add|Remove>\",\n"
+        "  \"new_alloc_pct\": <number>,\n"
+        "  \"reasoning\": \"<short explanation>\"\n"
+        "}\n\n"
+        "Never add extra keys or commentary.\n"
+        "Emit only JSON — no prose before or after.\n"
+        "<</SYS>>\n\n"
+        "TABLES (freq → table_name(columns)):\n"
+        "Quarterly → tickers(ticker, company_name, sector, date_added); analyst_estimates(...); \n"
+        "Daily → prices(...); analyst_labels(...); stock_news(...);\n"
+        "Weekly → grades_historical(...); allocations(...); predictions(...);\n"
+        "Annual → key_metrics(...); profiles(...).\n\n"
+        f"DATA:\n{json.dumps(full_data, ensure_ascii=False)}\n\n"
+        "Now output the JSON response.\n[/INST]"
+    )
+    llm_response = call_llm(system_prompt)
+    return jsonify({"llm_response": llm_response})
 
 @app.route("/api/run-fetch", methods=["POST"])
 def api_run_fetch():

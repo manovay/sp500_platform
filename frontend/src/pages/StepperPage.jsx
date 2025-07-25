@@ -42,7 +42,14 @@ export default function StepperPage() {
         <Step3_PromptReview info={stockInfo} onPromptReady={prompt => { setPrompt(prompt); handleNext(); }} onBack={handleBack} />
       )}
       {activeStep === 3 && (
-        <Step4_ShowResult prompt={prompt} onResult={setResult} result={result} onBack={handleBack} onReset={handleReset} />
+        <Step4_ShowResult 
+          prompt={prompt}
+          onResult={setResult}
+          result={result}
+          onBack={handleBack}
+          onReset={handleReset}
+          stock={selectedStock}
+        />
       )}
     </div>
   );
