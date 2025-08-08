@@ -48,15 +48,10 @@ def fetch(from_date):
                 resp.raise_for_status()
                 data = resp.json()
 
-<<<<<<< HEAD
-    # Retrieve all tickers
-            ticker_symbols = ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'TSLA']
-=======
                 if not data or not isinstance(data, list):
                     skipped += 1
                     print(f"  -> Skipped {ticker}: No data or invalid format from API for historical grades.")
                     continue
->>>>>>> 4a89c3ff58eeb0a6259632329e20ef2c2b93ded2
 
                 recent = [
                     r for r in data

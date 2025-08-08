@@ -157,3 +157,20 @@ CREATE TABLE ingestion_metadata (
 
 ALTER TABLE ingestion_metadata ADD COLUMN script_name TEXT;
 ALTER TABLE ingestion_metadata ADD COLUMN last_run_date DATE;
+
+-- Weekly LLM prompts and responses table
+CREATE TABLE IF NOT EXISTS weekly_llm_data (
+    id SERIAL PRIMARY KEY,
+    ticker VARCHAR(10) NOT NULL,
+    week_start_date DATE NOT NULL,
+    prompt_data JSONB NOT NULL,
+    response_data JSONB,
+    status VARCHAR(20) DEFAULT 'pending', -- pending, completed, failed
+    created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
+    FOREIGN KEY (ticker) REFERENCES tickers(ticker) ON DELETE CASCADE
+);
+
+-- Index for performance
+CREATE INDEX IF NOT EXISTS idx_weekly_llm_ticker_week ON weekly_llm_data (ticker, week_start_date);
+CREATE INDEX IF NOT EXISTS idx_weekly_llm_status ON weekly_llm_data (status);

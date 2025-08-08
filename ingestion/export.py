@@ -2,12 +2,12 @@
 import os
 import psycopg2
 
-# ———— Config (match your docker-compose) ————
+# ———— Database Configuration ————
 DB_HOST     = "localhost"
-DB_PORT     = 1111
+DB_PORT     = 5432
 DB_NAME     = "sp500_db"
-DB_USER     = "manovay"
-DB_PASSWORD = "Padhai007"
+DB_USER     = "your_username"
+DB_PASSWORD = "your_password"
 
 # List of tables from your schema.sql
 TABLES = [

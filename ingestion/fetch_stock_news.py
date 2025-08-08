@@ -35,17 +35,7 @@ def fetch(from_date):
     today = date.today()
     inserted = updated = skipped = 0
     try:
-<<<<<<< HEAD
-        # fixed start date because API only returns since Jan 1, 2025
-        start_date = date(2025, 1, 1)
-        today      = date.today()
-
-        inserted = updated = skipped = 0
-            ticker_symbols = ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'TSLA']
-
-=======
         tickers = [t[0] for t in session.query(tickers_table.c.ticker).all()]
->>>>>>> 4a89c3ff58eeb0a6259632329e20ef2c2b93ded2
         for ticker in tickers:
             url = (
                 f"https://financialmodelingprep.com/stable/news/stock"

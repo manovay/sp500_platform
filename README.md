@@ -1,8 +1,14 @@
----
+# S&P 500 Platform
 
-### 1. **(Optional) Activate your virtual environment**
-If you have one:
+A comprehensive platform for analyzing S&P 500 stocks with real-time data fetching, LLM-powered analysis, and a modern React frontend.
+
+## Quick Start
+
+### 1. **Set up your environment**
 ```bash
+# Create and activate virtual environment (recommended)
+python -m venv venv
+
 # On Windows
 venv\Scripts\activate
 
@@ -10,125 +16,79 @@ venv\Scripts\activate
 source venv/bin/activate
 ```
 
----
-
 ### 2. **Install dependencies**
 ```bash
 pip install -r requirements.txt
 ```
 
----
+### 3. **Set up your database**
+You'll need a PostgreSQL database running locally or remotely. Update your `.env` file with your database credentials:
 
-### 3. **Start your Docker containers**
-```bash
-docker-compose up -d
-```
-Wait a few seconds for the database to be ready.
-
----
-
-### 4. **Check that the database container is running**
-```bash
-docker ps
-```
-You should see a `postgres` container running and listening on port 1111.
-
----
-
-### 5. **Check your .env file**
-Make sure it contains:
-```
-DATABASE_URL=postgresql://manovay:Padhai007@localhost:1111/sp500_db
+```env
+DATABASE_URL=postgresql://username:password@localhost:5432/database_name
 FMP_API_KEY=your_fmp_api_key_here
-DB_HOST=postgres
-DB_PORT=5432
-DB_USER=manovay
-DB_PASSWORD=Padhai007
-DB_NAME=sp500_db
-ADMIN_TOKEN=choose_a_secret
+HF_TOKEN=your_huggingface_token_here
 ```
 
----
-
-### 6. **Initialize the database schema**
+### 4. **Initialize the database schema**
 ```bash
+cd ingestion
 python init_db.py
 ```
-You should see:
-```
-✅ Database schema created successfully
-```
-This command now also creates a `predictions` table used by the Flask backend.
 
----
-
-### 7. **Fetch and upsert S&P 500 tickers**
+### 5. **Fetch initial data**
 ```bash
+# Fetch S&P 500 tickers
 python fetch_tickers.py
-```
 
----
-
-### 8. **Fetch and upsert price data for tickers**
-```bash
+# Fetch price data
 python fetch_prices.py
-```
 
----
-
-### 9. **Fetch and upsert analyst labels**
-```bash
+# Fetch analyst data
 python fetch_analyst_labels.py
 ```
 
----
-
-### 10. **(Optional) View your database in pgAdmin**
-- Open your browser and go to: [http://localhost:8080](http://localhost:8080)
-- Login with:
-  - Email: `admin@example.com`
-  - Password: `admin`
-- Add a new server with:
-  - Host: `postgres`
-  - Port: `5432`
-  - Username: `manovay`
-  - Password: `Padhai007`
-    - Database: `sp500_db`
-
----
-
-### 11. **Run the Flask backend**
-Start the API server:
+### 6. **Start the Flask backend**
 ```bash
-python backend/app.py
+cd backend
+python app.py
 ```
-The server listens on `http://localhost:5000` and logs requests to the `predictions` table.
+The server will run on `http://localhost:5000`
 
----
-
-## **Summary of Commands**
-```bash
-pip install -r requirements.txt
-docker-compose up -d
-python init_db.py
-python fetch_tickers.py
-python fetch_prices.py
-python fetch_analyst_labels.py
-python backend/app.py
-```
-
----
-
-## Frontend React App
-
-A small React application is located in the `frontend/` directory and visualizes portfolio data from the API.
-
-Run it with:
-
+### 7. **Start the React frontend**
 ```bash
 cd frontend
 npm install
-npm start
+npm run dev
 ```
+The frontend will run on `http://localhost:5173`
 
-The app expects endpoints from a Flask backend such as `/api/history`, `/api/current`, and `/api/growth`. See [frontend/README.md](frontend/README.md) for details.
+## Project Structure
+
+- **`ingestion/`** - Data fetching scripts for S&P 500 data
+- **`backend/`** - Flask API server
+- **`frontend/`** - React application
+- **`prompting-training/`** - ML model training scripts
+
+## API Endpoints
+
+The Flask backend provides these endpoints:
+- `GET /api/stocks` - List all stocks
+- `GET /api/stocks/{ticker}/info` - Stock information
+- `GET /api/stocks/{ticker}/prices` - Price data
+- `GET /api/stocks/{ticker}/analyst-labels` - Analyst ratings
+- `GET /api/stocks/{ticker}/full-data` - Complete stock data
+- `POST /api/stocks/{ticker}/llm-verdict` - LLM analysis
+
+## Data Sources
+
+- **Financial Modeling Prep API** - Stock data, prices, analyst estimates
+- **Hugging Face** - LLM inference for stock analysis
+
+## Requirements
+
+- Python 3.9+
+- PostgreSQL database
+- Node.js 16+ (for frontend)
+- Financial Modeling Prep API key
+- Hugging Face API token

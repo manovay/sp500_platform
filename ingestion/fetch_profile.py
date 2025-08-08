@@ -35,8 +35,8 @@ def fetch(from_date):
     today = date.today()
     inserted = updated = skipped = 0
     try:
-        # Get all tickers from the tickers table
-            ticker_symbols = ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'TSLA']
+        # Get all tickers from the tickers table (limit to 5 for testing)
+        ticker_symbols = [t[0] for t in session.query(tickers_table.c.ticker).all()][:5]
         total_tickers = len(ticker_symbols)
         print(f"Found {total_tickers} tickers in DB to process for profiles.")
 

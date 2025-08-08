@@ -19,6 +19,7 @@ FETCH_MODULES = [
     ("fetch_analyst_estimates", "analyst_estimates"),
     ("fetch_historical_analyst", "grades_historical"),
     ("fetch_stock_news", "stock_news"),
+    ("fetch_weekly_llm", "weekly_llm_data"),  # New weekly LLM module
 ]
 
 FREQUENCY_TO_DAYS = {

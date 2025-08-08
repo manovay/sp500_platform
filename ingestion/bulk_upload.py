@@ -21,7 +21,7 @@ def init_database():
     with engine.connect() as connection:
         connection.execute(text(schema_sql))
         connection.commit()
-    print("✅ Database schema created successfully")
+    print(" Database schema created successfully")
     seed_sql = """
 INSERT INTO ingestion_metadata (table_name, frequency, script_name, last_run_date)
 VALUES
@@ -34,7 +34,8 @@ VALUES
   ('key_metrics',       'annual',    'fetch_metrics.py', '2025-06-11'),
   ('profiles',          'annual',    'fetch_profile.py', '2025-06-11'),
   ('allocations',       'weekly',    'fetch_historical_market_cap.py', '2025-06-11'),
-  ('predictions',       'weekly',    NULL, NULL)
+  ('predictions',       'weekly',    NULL, NULL),
+  ('weekly_llm_data',   'weekly',    'fetch_weekly_llm.py', NULL)
 ON CONFLICT (table_name) DO UPDATE
   SET frequency = EXCLUDED.frequency,
       script_name = EXCLUDED.script_name,
@@ -43,7 +44,7 @@ ON CONFLICT (table_name) DO UPDATE
     with engine.connect() as conn:
         conn.execute(text(seed_sql))
         conn.commit()
-    print("✅ ingestion_metadata seeded successfully")
+    print(" ingestion_metadata seeded successfully")
 
 def upload_csv_to_table(csv_path, table_name, conn):
     with conn.cursor() as cur:

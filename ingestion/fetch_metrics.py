@@ -34,12 +34,7 @@ def fetch(from_date):
         from_date = datetime.strptime(from_date, "%Y-%m-%d").date()
     inserted = updated = skipped = 0
     try:
-<<<<<<< HEAD
-        # Get all tickers from the tickers table
-            ticker_symbols = ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'TSLA']
-=======
         ticker_symbols = [t[0] for t in session.query(tickers_table.c.ticker).all()]
->>>>>>> 4a89c3ff58eeb0a6259632329e20ef2c2b93ded2
         total_tickers = len(ticker_symbols)
         print(f"Found {total_tickers} tickers in DB to process for key metrics.")
 

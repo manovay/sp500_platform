@@ -58,12 +58,7 @@ def fetch(from_date):
                     if not data or not isinstance(data, list):
                         break
 
-<<<<<<< HEAD
-    # Retrieve all tickers
-            ticker_symbols = ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'TSLA']
-=======
                     all_records.extend(data)
->>>>>>> 4a89c3ff58eeb0a6259632329e20ef2c2b93ded2
 
                     oldest = min(datetime.fromisoformat(r["date"]).date() for r in data)
                     if oldest < from_date:
