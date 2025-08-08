@@ -21,8 +21,14 @@ source venv/bin/activate
 pip install -r requirements.txt
 ```
 
-### 3. **Set up your database**
-You'll need a PostgreSQL database running locally or remotely. Update your `.env` file with your database credentials:
+### 3. **Set up your environment**
+Copy the environment template and configure your credentials:
+
+```bash
+cp env.template .env
+```
+
+Then edit `.env` with your actual credentials:
 
 ```env
 DATABASE_URL=postgresql://username:password@localhost:5432/database_name
