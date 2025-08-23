@@ -47,10 +47,9 @@ def fetch(from_date):
         if isinstance(from_date, str):
             from_date = datetime.strptime(from_date, "%Y-%m-%d").date()
 
-        # Get all tickers from the database (limit to 5 for testing)
-        tickers = [t[0] for t in session.query(Ticker.ticker).all()][:5]
+        tickers = [t[0] for t in session.query(Ticker.ticker).all()]
         total_upserts = 0
-        print(f"Found {len(tickers)} tickers to process for price data (limited to 5 for testing).")
+        print(f"Found {len(tickers)} tickers to process for price data.")
 
         for symbol in tickers:
             from_date_str = from_date.isoformat()

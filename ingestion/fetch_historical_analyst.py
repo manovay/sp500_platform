@@ -97,7 +97,7 @@ def fetch(from_date):
         session.commit()
         print(f"\u2705 Grades historical: Inserted={inserted}, Updated={updated}, Skipped={skipped}")
     except Exception as e:
-        print(f"❌ An error occurred during the grades historical fetching process: {str(e)}")
+        print(f"An error occurred during the grades historical fetching process: {str(e)}")
         session.rollback()
         raise
     finally:

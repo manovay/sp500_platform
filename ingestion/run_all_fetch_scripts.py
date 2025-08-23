@@ -1,8 +1,12 @@
 import os
+import sys
 from datetime import date, timedelta, datetime
 from dotenv import load_dotenv
 import importlib
 from sqlalchemy import create_engine, text
+
+# Add parent directory to Python path
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # Load environment variables
 load_dotenv(override=True)
@@ -19,7 +23,7 @@ FETCH_MODULES = [
     ("fetch_analyst_estimates", "analyst_estimates"),
     ("fetch_historical_analyst", "grades_historical"),
     ("fetch_stock_news", "stock_news"),
-    ("fetch_weekly_llm", "weekly_llm_data"),  # New weekly LLM module
+    ("fetch_weekly_llm", "weekly_llm_data")  # New weekly LLM module
 ]
 
 FREQUENCY_TO_DAYS = {
@@ -82,7 +86,7 @@ def main():
         if should_run_script(freq, last_run):
             try:
                 print(f"\n[{datetime.now().isoformat()}] --- Running {script}.py (frequency: {freq}, last_run_date: {last_run}) ---")
-                module = importlib.import_module(f"ingestion.{script}")
+                module = importlib.import_module(script)
                 from_date = last_run if last_run else (date.today() - timedelta(days=365*3)).isoformat()
                 print(f"[{datetime.now().isoformat()}] Calling fetch(from_date={from_date}) for {script}...")
                 module.fetch(from_date)

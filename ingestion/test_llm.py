@@ -121,24 +121,20 @@ def get_full_data_for_ticker(conn, ticker):
     # Calculate weekly volatility and average volume
     weekly_volatility = 0
     weekly_avg_vol = 0
-    if daily["prices"] and len(daily["prices"]) > 1:
+    if daily["prices"]:
         prices = daily["prices"]
-        # Calculate price volatility (standard deviation of returns)
-        returns = []
-        for i in range(1, len(prices)):
-            prev_price = float(prices[i-1].get('close_price', 0))
-            curr_price = float(prices[i].get('close_price', 0))
-            if prev_price > 0:
-                returns.append((curr_price - prev_price) / prev_price)
-        
-        # Only calculate volatility if we have at least 2 returns
-        if len(returns) >= 2:
-            try:
+        if len(prices) > 1:
+            # Calculate price volatility (standard deviation of returns)
+            returns = []
+            for i in range(1, len(prices)):
+                prev_price = float(prices[i-1].get('close_price', 0))
+                curr_price = float(prices[i].get('close_price', 0))
+                if prev_price > 0:
+                    returns.append((curr_price - prev_price) / prev_price)
+            
+            if returns:
                 import statistics
                 weekly_volatility = statistics.stdev(returns) * 100  # Convert to percentage
-            except Exception as e:
-                print(f"Warning: Could not calculate weekly volatility for {ticker}: {e}")
-                weekly_volatility = 0
         
         # Calculate average volume
         volumes = [float(price.get('volume', 0)) for price in prices if price.get('volume')]
@@ -152,23 +148,19 @@ def get_full_data_for_ticker(conn, ticker):
         SELECT * FROM prices WHERE ticker = :ticker AND price_date >= :year_ago ORDER BY price_date DESC
     """), {"ticker": ticker, "year_ago": year_ago}).mappings()]
     
-    if quarterly_prices and len(quarterly_prices) > 1:
-        # Calculate quarterly price volatility
-        returns = []
-        for i in range(1, len(quarterly_prices)):
-            prev_price = float(quarterly_prices[i-1].get('close_price', 0))
-            curr_price = float(quarterly_prices[i].get('close_price', 0))
-            if prev_price > 0:
-                returns.append((curr_price - prev_price) / prev_price)
-        
-        # Only calculate volatility if we have at least 2 returns
-        if len(returns) >= 2:
-            try:
+    if quarterly_prices:
+        if len(quarterly_prices) > 1:
+            # Calculate quarterly price volatility
+            returns = []
+            for i in range(1, len(quarterly_prices)):
+                prev_price = float(quarterly_prices[i-1].get('close_price', 0))
+                curr_price = float(quarterly_prices[i].get('close_price', 0))
+                if prev_price > 0:
+                    returns.append((curr_price - prev_price) / prev_price)
+            
+            if returns:
                 import statistics
                 quarterly_volatility = statistics.stdev(returns) * 100  # Convert to percentage
-            except Exception as e:
-                print(f"Warning: Could not calculate quarterly volatility for {ticker}: {e}")
-                quarterly_volatility = 0
         
         # Calculate quarterly average volume
         volumes = [float(price.get('volume', 0)) for price in quarterly_prices if price.get('volume')]
@@ -567,9 +559,19 @@ def extract_llm_response(resp):
 def save_to_database(ticker, response_data=None, status='pending'):
     """
     Save the response to the database (without storing the large prompt)
+    First deletes any existing data for this ticker to ensure clean test data
     """
     session = Session()
     try:
+        # First, delete any existing data for this ticker
+        print(f"🗑️  Clearing existing data for {ticker}...")
+        deleted_count = session.query(WeeklyLLMData).filter(
+            WeeklyLLMData.ticker == ticker
+        ).delete()
+        if deleted_count > 0:
+            print(f"   Deleted {deleted_count} existing records for {ticker}")
+        session.commit()
+        
         # Calculate week start date (Monday of current week)
         today = date.today()
         week_start_date = today - timedelta(days=today.weekday())
@@ -658,24 +660,19 @@ def process_ticker(ticker, conn):
         save_to_database(ticker, None, 'failed')
         return False  # Failed
 
-def fetch(from_date=None, limit=600):
+def main():
     """
-    Main fetch method to process tickers for LLM analysis
-    Similar to other fetch scripts in the project
-    
-    Args:
-        from_date: Ignored parameter for compatibility with run_all_fetch_scripts.py
-        limit: Number of tickers to process (default: 600)
+    Main method to process 1 ticker for testing
     """
     start_time = time.time()  # Start timer
-    print("🚀 Starting LLM analysis...")
+    print("🚀 Starting LLM analysis for 1 ticker...")
     
     # Track success/failure counts
     successful_saves = 0
     failed_saves = 0
     
     with engine.connect() as conn:
-        # Get tickers that have sufficient data
+        # Get 1 ticker that has sufficient data
         result = conn.execute(text("""
             SELECT DISTINCT t.ticker 
             FROM tickers t
@@ -685,8 +682,8 @@ def fetch(from_date=None, limit=600):
                 AND ticker IN (SELECT DISTINCT ticker FROM profiles)
             )
             ORDER BY t.ticker 
-            LIMIT :limit
-        """), {"limit": limit})
+            LIMIT 200
+        """))
         
         tickers = [row[0] for row in result.fetchall()]
         
@@ -694,11 +691,10 @@ def fetch(from_date=None, limit=600):
             print("❌ No tickers found with sufficient data")
             return
         
-        print(f" Found {len(tickers)} tickers with sufficient data")
+        print(f" Found {len(tickers)} ticker with sufficient data: {tickers}")
         
         # Process each ticker
-        for i, ticker in enumerate(tickers, 1):
-            print(f"\n🔄 Processing ticker {i}/{len(tickers)}: {ticker}")
+        for ticker in tickers:
             success = process_ticker(ticker, conn)
             if success:
                 successful_saves += 1
@@ -708,18 +704,12 @@ def fetch(from_date=None, limit=600):
     # Calculate and display total time and results
     end_time = time.time()
     total_time = end_time - start_time
-    print(f"\n🎉 Completed processing {len(tickers)} tickers!")
+    print(f"\n🎉 Completed processing {len(tickers)} ticker!")
     print(f"⏱️  Total execution time: {total_time:.2f} seconds ({total_time/60:.2f} minutes)")
     print(f"📊 Results Summary:")
     print(f"   ✅ Successfully saved: {successful_saves}")
     print(f"   ❌ Failed to save: {failed_saves}")
     print(f"   📈 Success rate: {(successful_saves/(successful_saves+failed_saves)*100):.1f}%")
-
-def main():
-    """
-    Main method to process tickers for LLM analysis
-    """
-    fetch(limit=600)
 
 if __name__ == "__main__":
     main()

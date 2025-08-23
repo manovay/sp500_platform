@@ -43,8 +43,8 @@ def fetch(from_date):
         for ticker_data in tickers_data:
             print(f"  Processing for DB: {ticker_data.get('symbol', 'N/A')} - {ticker_data.get('name', 'N/A')}")
             ticker = Ticker(
-                ticker=ticker_data['ticker'],
-                company_name=ticker_data['company_name'],
+                ticker=ticker_data['symbol'],  # Change from 'ticker' to 'symbol'
+                company_name=ticker_data['name'],  # Change from 'company_name' to 'name'
                 sector=ticker_data['sector'],
                 date_added=today
             )
