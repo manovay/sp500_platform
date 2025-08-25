@@ -254,25 +254,19 @@ def api_history():
         current_cash = float(account.cash)
         account_created = account.created_at
         
-        # Use account creation date as the earliest possible start date
-        account_start_date = account_created.replace(tzinfo=None) if account_created else datetime.now() - timedelta(days=30)
-        
-        # Determine the actual start date based on timeframe and account creation
+        # Determine the actual start date based on timeframe
         end_date = datetime.now()
         
         if timeframe == 'ytd':
-            requested_start = datetime(end_date.year, 1, 1)
+            start_date = datetime(end_date.year, 1, 1)
         elif timeframe == '3m':
-            requested_start = end_date - timedelta(days=90)
+            start_date = end_date - timedelta(days=90)
         elif timeframe == '1m':
-            requested_start = end_date - timedelta(days=30)
+            start_date = end_date - timedelta(days=30)
         elif timeframe == '1w':
-            requested_start = end_date - timedelta(days=7)
+            start_date = end_date - timedelta(days=7)
         else:
-            requested_start = datetime(end_date.year, 1, 1)
-        
-        # Use the later of account creation or requested start date
-        start_date = max(account_start_date, requested_start)
+            start_date = datetime(end_date.year, 1, 1)
         
         # For a new account, create a simple linear progression from initial cash to current equity
         equity_data = []
@@ -295,13 +289,8 @@ def api_history():
                     "equity": round(current_equity, 2)
                 })
             else:
-                # For a new account, create a realistic starting point
-                # Start with cash or a reasonable percentage of current equity
-                if current_cash > 0 and current_cash < current_equity:
-                    starting_equity = current_cash
-                else:
-                    # If no cash or cash is higher than equity, start at 95% of current equity
-                    starting_equity = current_equity * 0.95
+                # Use the actual starting equity of $100,000
+                starting_equity = 100000.0
                 
                 while current_date <= end_date:
                     # Skip weekends
@@ -323,15 +312,9 @@ def api_history():
                     
                     current_date += timedelta(days=1)
         
-        # Calculate KPIs using actual data
-        # Always use the real current equity from Alpaca for consistency with main page
-        if equity_data:
-            start_equity = equity_data[0]["equity"]
-            # Use the real current equity, not the calculated one
-            current_equity = float(account.equity)
-        else:
-            start_equity = current_equity
-            current_equity = current_equity
+        # Calculate KPIs using $100,000 as the starting point
+        start_equity = 100000.0
+        current_equity = float(account.equity)
             
         ytd_pl = current_equity - start_equity
         ytd_return = (ytd_pl / start_equity) * 100 if start_equity > 0 else 0
