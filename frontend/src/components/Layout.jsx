@@ -31,6 +31,18 @@ export default function Layout() {
           >
             Stock Analysis
           </Link>
+          <Link 
+            to="/flowchart" 
+            className={`nav-link ${location.pathname === '/flowchart' ? 'active' : ''}`}
+          >
+            How it Works
+          </Link>
+          <Link 
+            to="/timeline" 
+            className={`nav-link ${location.pathname === '/timeline' ? 'active' : ''}`}
+          >
+            How I Built It
+          </Link>
         </nav>
       </header>
       <main>
