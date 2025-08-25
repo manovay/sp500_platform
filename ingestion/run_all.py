@@ -23,7 +23,8 @@ FETCH_MODULES = [
     ("fetch_analyst_estimates", "analyst_estimates"),
     ("fetch_historical_analyst", "grades_historical"),
     ("fetch_stock_news", "stock_news"),
-    ("fetch_weekly_llm", "weekly_llm_data")  # New weekly LLM module
+    ("fetch_weekly_llm", "weekly_llm_data"),  # New weekly LLM module
+    ("run_trades", "actual_portfolio_allocations")  # Trading execution module
 ]
 
 FREQUENCY_TO_DAYS = {
@@ -80,7 +81,9 @@ def update_last_run_date(script):
 def main():
     print(f"\n[{datetime.now().isoformat()}] 🚀 Starting the scheduled data fetching pipeline...\n")
     meta_info = get_meta_info()
-    for script, _ in FETCH_MODULES:
+    
+    # Run all the data fetching scripts first
+    for script, _ in FETCH_MODULES[:-1]:  # Exclude run_trades for now
         freq = meta_info[script]["frequency"]
         last_run = meta_info[script]["last_run_date"]
         if should_run_script(freq, last_run):
@@ -97,6 +100,16 @@ def main():
                 break
         else:
             print(f"[{datetime.now().isoformat()}] ⏩ Skipping {script}.py (frequency: {freq}, last_run_date: {last_run}) - Not due yet.")
+    
+    # Always run run_trades if all data fetching succeeded
+    try:
+        print(f"\n[{datetime.now().isoformat()}] --- Running run_trades.py (always runs after data fetch) ---")
+        module = importlib.import_module("run_trades")
+        module.fetch()  # or module.main()
+        print(f"[{datetime.now().isoformat()}] --- run_trades.py finished ---")
+    except Exception as e:
+        print(f"[{datetime.now().isoformat()}] ❌ Error running run_trades: {e}")
+    
     print(f"\n[{datetime.now().isoformat()}] --- Pipeline Execution Summary ---")
     print(f"[{datetime.now().isoformat()}] 🎉 All due fetch modules executed (or stopped on error).\n")
 

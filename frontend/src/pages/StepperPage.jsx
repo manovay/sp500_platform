@@ -31,7 +31,10 @@ export default function StepperPage() {
 
   return (
     <div>
-      <Stepper steps={steps} activeStep={activeStep} />
+      <div className="card mb-lg">
+        <Stepper steps={steps} activeStep={activeStep} />
+      </div>
+      
       {activeStep === 0 && (
         <Step1_SearchStock onSelect={stock => { setSelectedStock(stock); handleNext(); }} />
       )}

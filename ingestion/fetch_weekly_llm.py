@@ -64,11 +64,21 @@ def get_full_data_for_ticker(conn, ticker):
     # Get snapshot date (use snapshot_date instead of latest allocation_date)
     snapshot = snapshot_date.isoformat()
 
-    # Previous allocation pct (previous week)
-    prev_alloc_row = conn.execute(text("""
-        SELECT allocation_pct FROM allocations WHERE ticker = :ticker AND allocation_date < :week_ago ORDER BY allocation_date DESC LIMIT 1
+    # Previous ACTUAL allocation pct (from actual_portfolio_allocations table)
+    prev_actual_row = conn.execute(text("""
+        SELECT actual_allocation_pct FROM actual_portfolio_allocations 
+        WHERE ticker = :ticker AND allocation_date < :week_ago 
+        ORDER BY allocation_date DESC LIMIT 1
     """), {"ticker": ticker, "week_ago": week_ago}).mappings().fetchone()
-    previous_allocation_pct = float(prev_alloc_row["allocation_pct"]) if prev_alloc_row else None
+    
+    # Fallback to FMP allocations if no actual data exists
+    if not prev_actual_row:
+        prev_alloc_row = conn.execute(text("""
+            SELECT allocation_pct FROM allocations WHERE ticker = :ticker AND allocation_date < :week_ago ORDER BY allocation_date DESC LIMIT 1
+        """), {"ticker": ticker, "week_ago": week_ago}).mappings().fetchone()
+        previous_allocation_pct = float(prev_alloc_row["allocation_pct"]) if prev_alloc_row else None
+    else:
+        previous_allocation_pct = float(prev_actual_row["actual_allocation_pct"])
 
     # Profile summary (from profiles)
     profile_row = conn.execute(text("""

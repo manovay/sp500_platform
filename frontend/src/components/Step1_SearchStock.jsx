@@ -22,27 +22,39 @@ export default function Step1_SearchStock({ onSelect }) {
   };
 
   return (
-    <div>
-      <h2>Step 1: Search for a Stock</h2>
-      <input
-        type="text"
-        value={query}
-        onChange={e => setQuery(e.target.value)}
-        placeholder="Enter ticker or company name"
-        style={{ marginRight: '1rem', padding: '0.5rem' }}
-      />
-      <button onClick={handleSearch} disabled={loading}>
-        {loading ? 'Searching…' : 'Search'}
-      </button>
-      <ul style={{ marginTop: '1rem' }}>
-        {results.map(stock => (
-          <li key={stock.ticker} style={{ marginBottom: '0.5rem' }}>
-            <button onClick={() => onSelect(stock)} style={{ padding: '0.5rem 1rem' }}>
-              {stock.ticker} - {stock.company_name}
-            </button>
-          </li>
-        ))}
-      </ul>
+    <div className="card">
+      <div className="card-header">
+        <h2 className="card-title">Step 1: Search for a Stock</h2>
+      </div>
+      <div className="card-body">
+        <div className="flex gap-md mb-lg">
+          <input
+            type="text"
+            value={query}
+            onChange={e => setQuery(e.target.value)}
+            placeholder="Enter ticker or company name"
+            className="flex-1"
+          />
+          <button onClick={handleSearch} disabled={loading} className="btn btn-primary">
+            {loading ? 'Searching…' : 'Search'}
+          </button>
+        </div>
+        
+        {results.length > 0 && (
+          <div className="space-y-sm">
+            {results.map(stock => (
+              <button 
+                key={stock.ticker} 
+                onClick={() => onSelect(stock)} 
+                className="btn w-full text-left justify-start"
+              >
+                <span className="font-semibold">{stock.ticker}</span>
+                <span className="text-muted ml-sm">- {stock.company_name}</span>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 } 

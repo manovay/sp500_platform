@@ -42,252 +42,129 @@ export async function getPromptData(ticker) {
   }
 }
 
-export async function getStockPrices(ticker) {
+
+
+// Portfolio Management Functions
+export async function getAccountInfo() {
   try {
-    const response = await fetch(`${API_BASE}/api/stocks/${ticker}/prices`);
+    const response = await fetch(`${API_BASE}/api/account`);
     const data = await response.json();
     if (data.status === 'ok') {
-      return data.prices;
+      return data.account;
     } else {
-      throw new Error(data.error || 'Failed to fetch prices');
+      throw new Error(data.error || 'Failed to fetch account info');
     }
   } catch (error) {
-    console.error('Error fetching prices:', error);
+    console.error('Error fetching account info:', error);
     throw error;
   }
 }
 
-export async function getStockAnalystLabels(ticker) {
+export async function getPositions() {
   try {
-    const response = await fetch(`${API_BASE}/api/stocks/${ticker}/analyst-labels`);
+    const response = await fetch(`${API_BASE}/api/positions`);
     const data = await response.json();
     if (data.status === 'ok') {
-      return data.analyst_labels;
+      return data.positions;
     } else {
-      throw new Error(data.error || 'Failed to fetch analyst labels');
+      throw new Error(data.error || 'Failed to fetch positions');
     }
   } catch (error) {
-    console.error('Error fetching analyst labels:', error);
+    console.error('Error fetching positions:', error);
     throw error;
   }
 }
 
-export async function getStockAnalystEstimates(ticker) {
+export async function getHistory(timeframe = 'ytd') {
   try {
-    const response = await fetch(`${API_BASE}/api/stocks/${ticker}/analyst-estimates`);
+    const response = await fetch(`${API_BASE}/api/history?timeframe=${timeframe}`);
     const data = await response.json();
     if (data.status === 'ok') {
-      return data.analyst_estimates;
+      return data;
     } else {
-      throw new Error(data.error || 'Failed to fetch analyst estimates');
+      throw new Error(data.error || 'Failed to fetch history');
     }
   } catch (error) {
-    console.error('Error fetching analyst estimates:', error);
+    console.error('Error fetching history:', error);
     throw error;
   }
 }
 
-export async function getStockGradesHistorical(ticker) {
+export async function getOrderHistory() {
   try {
-    const response = await fetch(`${API_BASE}/api/stocks/${ticker}/grades-historical`);
+    const response = await fetch(`${API_BASE}/api/history/orders`);
     const data = await response.json();
     if (data.status === 'ok') {
-      return data.grades_historical;
+      return data.orders;
     } else {
-      throw new Error(data.error || 'Failed to fetch historical grades');
+      throw new Error(data.error || 'Failed to fetch order history');
     }
   } catch (error) {
-    console.error('Error fetching historical grades:', error);
+    console.error('Error fetching order history:', error);
     throw error;
   }
 }
 
-export async function getStockNews(ticker) {
+export async function getActivityHistory() {
   try {
-    const response = await fetch(`${API_BASE}/api/stocks/${ticker}/news`);
+    const response = await fetch(`${API_BASE}/api/history/activities`);
     const data = await response.json();
     if (data.status === 'ok') {
-      return data.news;
+      return data.activities;
     } else {
-      throw new Error(data.error || 'Failed to fetch news');
+      throw new Error(data.error || 'Failed to fetch activity history');
     }
   } catch (error) {
-    console.error('Error fetching news:', error);
+    console.error('Error fetching activity history:', error);
     throw error;
   }
 }
 
-export async function getStockKeyMetrics(ticker) {
+export async function getOpenOrders() {
   try {
-    const response = await fetch(`${API_BASE}/api/stocks/${ticker}/key-metrics`);
+    const response = await fetch(`${API_BASE}/api/orders?status=open`);
     const data = await response.json();
     if (data.status === 'ok') {
-      return data.key_metrics;
+      return data.orders;
     } else {
-      throw new Error(data.error || 'Failed to fetch key metrics');
+      throw new Error(data.error || 'Failed to fetch open orders');
     }
   } catch (error) {
-    console.error('Error fetching key metrics:', error);
+    console.error('Error fetching open orders:', error);
     throw error;
   }
 }
 
-export async function getStockProfile(ticker) {
+export async function cancelOrder(orderId) {
   try {
-    const response = await fetch(`${API_BASE}/api/stocks/${ticker}/profile`);
-    const data = await response.json();
-    if (data.status === 'ok') {
-      return data.profile;
-    } else {
-      throw new Error(data.error || 'Failed to fetch profile');
-    }
-  } catch (error) {
-    console.error('Error fetching profile:', error);
-    throw error;
-  }
-}
-
-export async function getStockAllocations(ticker) {
-  try {
-    const response = await fetch(`${API_BASE}/api/stocks/${ticker}/allocations`);
-    const data = await response.json();
-    if (data.status === 'ok') {
-      return data.allocations;
-    } else {
-      throw new Error(data.error || 'Failed to fetch allocations');
-    }
-  } catch (error) {
-    console.error('Error fetching allocations:', error);
-    throw error;
-  }
-}
-
-export async function getStockPredictions(ticker) {
-  try {
-    const response = await fetch(`${API_BASE}/api/stocks/${ticker}/predictions`);
-    const data = await response.json();
-    if (data.status === 'ok') {
-      return data.predictions;
-    } else {
-      throw new Error(data.error || 'Failed to fetch predictions');
-    }
-  } catch (error) {
-    console.error('Error fetching predictions:', error);
-    throw error;
-  }
-}
-
-export async function testPopulate() {
-  try {
-    const response = await fetch(`${API_BASE}/api/test-populate`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      }
+    const response = await fetch(`${API_BASE}/api/orders/${orderId}`, {
+      method: 'DELETE'
     });
     const data = await response.json();
     if (data.status === 'ok') {
       return data;
     } else {
-      throw new Error(data.error || 'Failed to populate test data');
+      throw new Error(data.error || 'Failed to cancel order');
     }
   } catch (error) {
-    console.error('Error populating test data:', error);
+    console.error('Error cancelling order:', error);
     throw error;
   }
 }
 
-export async function runFetch(freq) {
+export async function cancelAllOrders() {
   try {
-    const response = await fetch(`${API_BASE}/api/run-fetch`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({ freq })
+    const response = await fetch(`${API_BASE}/api/orders`, {
+      method: 'DELETE'
     });
     const data = await response.json();
     if (data.status === 'ok') {
       return data;
     } else {
-      throw new Error(data.error || 'Failed to run fetch');
+      throw new Error(data.error || 'Failed to cancel all orders');
     }
   } catch (error) {
-    console.error('Error running fetch:', error);
+    console.error('Error cancelling all orders:', error);
     throw error;
   }
-}
-
-export async function checkConsistency() {
-  try {
-    const response = await fetch(`${API_BASE}/api/health/consistency`, {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json'
-      }
-    });
-    const data = await response.json();
-    if (data.status === 'ok') {
-      return data;
-    } else {
-      throw new Error(data.error || 'Failed to check consistency');
-    }
-  } catch (error) {
-    console.error('Error checking consistency:', error);
-    throw error;
-  }
-}
-
-export async function fixConsistency() {
-  try {
-    const response = await fetch(`${API_BASE}/api/health/consistency/fix`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      }
-    });
-    const data = await response.json();
-    if (data.status === 'ok') {
-      return data;
-    } else {
-      throw new Error(data.error || 'Failed to fix consistency');
-    }
-  } catch (error) {
-    console.error('Error fixing consistency:', error);
-    throw error;
-  }
-}
-
-// Cache management functions
-export function clearAllCache() {
-  const keys = Object.keys(localStorage);
-  keys.forEach(key => {
-    if (key.startsWith('sp500_')) {
-      localStorage.removeItem(key);
-    }
-  });
-  console.log('🗑️ Cleared all cache');
-}
-
-export function getCacheInfo() {
-  const cacheInfo = {};
-  const keys = Object.keys(localStorage);
-  
-  keys.forEach(key => {
-    if (key.startsWith('sp500_')) {
-      try {
-        const cached = JSON.parse(localStorage.getItem(key));
-        const dataKey = key.replace('sp500_', '');
-        cacheInfo[dataKey] = {
-          timestamp: cached.timestamp,
-          age: Math.round((Date.now() - cached.timestamp) / 1000),
-          size: JSON.stringify(cached.data).length
-        };
-      } catch {
-        // Invalid cache entry
-      }
-    }
-  });
-  
-  return cacheInfo;
 }
