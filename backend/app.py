@@ -4,7 +4,7 @@ from flask_cors import CORS
 from sqlalchemy import create_engine, text
 from dotenv import load_dotenv
 import json
-from datetime import date, timedelta, datetime, timezone
+from datetime import date, timedelta, datetime
 import requests
 import re
 import statistics
@@ -13,14 +13,11 @@ import statistics
 from alpaca.trading.client import TradingClient
 from alpaca.trading.requests import GetOrdersRequest
 from alpaca.trading.enums import QueryOrderStatus
-from alpaca.data.historical import StockHistoricalDataClient
-from alpaca.data.requests import StockBarsRequest
-from alpaca.data.timeframe import TimeFrame
 
 # Load environment variables before anything else
 load_dotenv(override=True)
 
-# Initialize Alpaca clients
+# Initialize Alpaca client
 ALPACA_API_KEY = os.getenv("ALPACA_KEY")
 ALPACA_SECRET_KEY = os.getenv("ALPACA_SECRET")
 
@@ -28,16 +25,13 @@ if not ALPACA_API_KEY or not ALPACA_SECRET_KEY:
     print("WARNING: ALPACA_KEY or ALPACA_SECRET not found in environment variables!")
     print("Portfolio endpoints will return configuration errors.")
     trading_client = None
-    data_client = None
 else:
     try:
         trading_client = TradingClient(ALPACA_API_KEY, ALPACA_SECRET_KEY, paper=True)
-        data_client = StockHistoricalDataClient(ALPACA_API_KEY, ALPACA_SECRET_KEY)
-        print("✅ Alpaca clients initialized successfully")
+        print("✅ Alpaca client initialized successfully")
     except Exception as e:
-        print(f"❌ Error initializing Alpaca clients: {e}")
+        print(f"❌ Error initializing Alpaca client: {e}")
         trading_client = None
-        data_client = None
 
 app = Flask(__name__)
 CORS(app, origins=[os.getenv("FRONTEND_ORIGIN", "http://localhost:5173")])
@@ -51,17 +45,66 @@ else:
     engine = create_engine(DATABASE_URL)
 
 # ============================================================================
+# HELPER FUNCTIONS
+# ============================================================================
+
+def check_database_configured():
+    """Check if database is configured and return error response if not"""
+    if not engine:
+        return jsonify({
+            "status": "error", 
+            "error": "Database not configured. Set DATABASE_URL environment variable."
+        }), 500
+    return None
+
+def check_alpaca_configured():
+    """Check if Alpaca is configured and return error response if not"""
+    if trading_client is None:
+        return jsonify({
+            "status": "error", 
+            "error": "Alpaca not configured. Set ALPACA_KEY and ALPACA_SECRET environment variables."
+        }), 500
+    return None
+
+def calculate_volatility_and_volume(prices, ticker, period_name):
+    """Calculate volatility and average volume for a given price dataset"""
+    volatility = 0
+    avg_vol = 0
+    
+    if prices and len(prices) > 1:
+        # Calculate price volatility (standard deviation of returns)
+        returns = []
+        for i in range(1, len(prices)):
+            prev_price = float(prices[i-1].get('close_price', 0))
+            curr_price = float(prices[i].get('close_price', 0))
+            if prev_price > 0:
+                returns.append((curr_price - prev_price) / prev_price)
+        
+        # Only calculate volatility if we have at least 2 returns
+        if len(returns) >= 2:
+            try:
+                volatility = statistics.stdev(returns) * 100  # Convert to percentage
+            except Exception as e:
+                print(f"Warning: Could not calculate {period_name} volatility for {ticker}: {e}")
+                volatility = 0
+        
+        # Calculate average volume
+        volumes = [float(price.get('volume', 0)) for price in prices if price.get('volume')]
+        if volumes:
+            avg_vol = sum(volumes) / len(volumes)
+    
+    return volatility, avg_vol
+
+# ============================================================================
 # STOCK ANALYSIS ENDPOINTS (Used by Stepper components)
 # ============================================================================
 
 @app.route("/api/stocks", methods=["GET"])
 def api_stocks():
     """List all tickers with company name and sector"""
-    if not engine:
-        return jsonify({
-            "status": "error", 
-            "error": "Database not configured. Set DATABASE_URL environment variable."
-        }), 500
+    error_response = check_database_configured()
+    if error_response:
+        return error_response
     
     with engine.connect() as conn:
         result = conn.execute(text("""
@@ -73,11 +116,9 @@ def api_stocks():
 @app.route("/api/stocks/<ticker>/info", methods=["GET"])
 def api_stock_info(ticker):
     """Basic info for a ticker: name, sector, profile"""
-    if not engine:
-        return jsonify({
-            "status": "error", 
-            "error": "Database not configured. Set DATABASE_URL environment variable."
-        }), 500
+    error_response = check_database_configured()
+    if error_response:
+        return error_response
     
     with engine.connect() as conn:
         ticker_row = conn.execute(text("""
@@ -94,11 +135,9 @@ def api_stock_info(ticker):
 @app.route("/api/stocks/<ticker>/full-data", methods=["GET"])
 def api_stock_full_data(ticker):
     """Return comprehensive data for a ticker (used by Step3_PromptReview)"""
-    if not engine:
-        return jsonify({
-            "status": "error", 
-            "error": "Database not configured. Set DATABASE_URL environment variable."
-        }), 500
+    error_response = check_database_configured()
+    if error_response:
+        return error_response
     
     with engine.connect() as conn:
         # Get basic ticker info
@@ -149,11 +188,9 @@ def api_stock_full_data(ticker):
 @app.route("/api/account", methods=["GET"])
 def api_account():
     """Get account summary information"""
-    if trading_client is None:
-        return jsonify({
-            "status": "error", 
-            "error": "Alpaca not configured. Set ALPACA_KEY and ALPACA_SECRET environment variables."
-        }), 500
+    error_response = check_alpaca_configured()
+    if error_response:
+        return error_response
     
     try:
         # Get real account data from Alpaca
@@ -175,11 +212,9 @@ def api_account():
 @app.route("/api/positions", methods=["GET"])
 def api_positions():
     """Get current positions"""
-    if trading_client is None:
-        return jsonify({
-            "status": "error", 
-            "error": "Alpaca not configured. Set ALPACA_KEY and ALPACA_SECRET environment variables."
-        }), 500
+    error_response = check_alpaca_configured()
+    if error_response:
+        return error_response
     
     try:
         # Get real positions from Alpaca
@@ -208,11 +243,9 @@ def api_history():
     """Get portfolio history"""
     timeframe = request.args.get('timeframe', 'ytd')
     
-    if trading_client is None:
-        return jsonify({
-            "status": "error", 
-            "error": "Alpaca not configured. Set ALPACA_KEY and ALPACA_SECRET environment variables."
-        }), 500
+    error_response = check_alpaca_configured()
+    if error_response:
+        return error_response
     
     try:
         # Get current account information
@@ -303,28 +336,6 @@ def api_history():
         ytd_pl = current_equity - start_equity
         ytd_return = (ytd_pl / start_equity) * 100 if start_equity > 0 else 0
         
-        # Add debug info for development
-        debug_info = {
-            "account_created": account_created.isoformat() if account_created else "Unknown",
-            "current_cash": current_cash,
-            "current_equity": current_equity,
-            "start_date": start_date.isoformat(),
-            "end_date": end_date.isoformat(),
-            "data_points": len(equity_data),
-            "start_equity": start_equity,
-            "end_equity": equity_data[-1]["equity"] if equity_data else current_equity,
-            "real_current_equity": float(account.equity)
-        }
-        
-        # Print debug info to console
-        print(f"[HISTORY DEBUG] Account created: {account_created}")
-        print(f"[HISTORY DEBUG] Current equity: ${current_equity:,.2f}")
-        print(f"[HISTORY DEBUG] Current cash: ${current_cash:,.2f}")
-        print(f"[HISTORY DEBUG] Start equity: ${start_equity:,.2f}")
-        print(f"[HISTORY DEBUG] Data points: {len(equity_data)}")
-        print(f"[HISTORY DEBUG] First data point: {equity_data[0] if equity_data else 'None'}")
-        print(f"[HISTORY DEBUG] Last data point: {equity_data[-1] if equity_data else 'None'}")
-        
         return jsonify({
             "status": "ok",
             "history": equity_data,
@@ -333,8 +344,7 @@ def api_history():
                 "current_equity": current_equity,
                 "ytd_pl": round(ytd_pl, 2),
                 "ytd_return": round(ytd_return, 2)
-            },
-            "debug": debug_info
+            }
         })
     except Exception as e:
         print(f"Error fetching portfolio history: {e}")
@@ -343,11 +353,9 @@ def api_history():
 @app.route("/api/history/orders", methods=["GET"])
 def api_order_history():
     """Get order history"""
-    if trading_client is None:
-        return jsonify({
-            "status": "error", 
-            "error": "Alpaca not configured. Set ALPACA_KEY and ALPACA_SECRET environment variables."
-        }), 500
+    error_response = check_alpaca_configured()
+    if error_response:
+        return error_response
     
     try:
         # Get real order history from Alpaca with pagination
@@ -391,11 +399,9 @@ def api_activity_history():
     types = request.args.get('types', 'FILL,DIV,FEES')
     page_size = request.args.get('page_size', 100)
     
-    if trading_client is None:
-        return jsonify({
-            "status": "error", 
-            "error": "Alpaca not configured. Set ALPACA_KEY and ALPACA_SECRET environment variables."
-        }), 500
+    error_response = check_alpaca_configured()
+    if error_response:
+        return error_response
     
     try:
         # Try to get activities from Alpaca, but provide fallback if method doesn't exist
@@ -457,11 +463,9 @@ def api_activity_history():
 @app.route("/api/orders", methods=["GET"])
 def api_get_orders():
     """Get open orders"""
-    if trading_client is None:
-        return jsonify({
-            "status": "error", 
-            "error": "Alpaca not configured. Set ALPACA_KEY and ALPACA_SECRET environment variables."
-        }), 500
+    error_response = check_alpaca_configured()
+    if error_response:
+        return error_response
     
     try:
         # Get real open orders from Alpaca with pagination
@@ -494,11 +498,9 @@ def api_get_orders():
 @app.route("/api/orders/<order_id>", methods=["DELETE"])
 def api_cancel_order(order_id):
     """Cancel a specific order"""
-    if trading_client is None:
-        return jsonify({
-            "status": "error", 
-            "error": "Alpaca not configured. Set ALPACA_KEY and ALPACA_SECRET environment variables."
-        }), 500
+    error_response = check_alpaca_configured()
+    if error_response:
+        return error_response
     
     try:
         # Cancel real order in Alpaca
@@ -511,11 +513,9 @@ def api_cancel_order(order_id):
 @app.route("/api/orders", methods=["DELETE"])
 def api_cancel_all_orders():
     """Cancel all open orders"""
-    if trading_client is None:
-        return jsonify({
-            "status": "error", 
-            "error": "Alpaca not configured. Set ALPACA_KEY and ALPACA_SECRET environment variables."
-        }), 500
+    error_response = check_alpaca_configured()
+    if error_response:
+        return error_response
     
     try:
         # Cancel all real orders in Alpaca
@@ -542,12 +542,6 @@ class DateEncoder(json.JSONEncoder):
         elif hasattr(obj, '__float__'):  # Handle Decimal, Fraction, etc.
             return float(obj)
         return super().default(obj)
-
-def serialize_for_json(data):
-    """
-    Serialize data for JSON storage, handling dates and other non-serializable objects
-    """
-    return json.loads(json.dumps(data, cls=DateEncoder))
 
 def get_full_data_for_ticker_llm(conn, ticker):
     """
@@ -627,59 +621,14 @@ def get_full_data_for_ticker_llm(conn, ticker):
     """), {"ticker": ticker, "year_ago": year_ago}).mappings()]
 
     # Calculate weekly volatility and average volume
-    weekly_volatility = 0
-    weekly_avg_vol = 0
-    if daily["prices"] and len(daily["prices"]) > 1:
-        prices = daily["prices"]
-        # Calculate price volatility (standard deviation of returns)
-        returns = []
-        for i in range(1, len(prices)):
-            prev_price = float(prices[i-1].get('close_price', 0))
-            curr_price = float(prices[i].get('close_price', 0))
-            if prev_price > 0:
-                returns.append((curr_price - prev_price) / prev_price)
-        
-        # Only calculate volatility if we have at least 2 returns
-        if len(returns) >= 2:
-            try:
-                weekly_volatility = statistics.stdev(returns) * 100  # Convert to percentage
-            except Exception as e:
-                print(f"Warning: Could not calculate weekly volatility for {ticker}: {e}")
-                weekly_volatility = 0
-        
-        # Calculate average volume
-        volumes = [float(price.get('volume', 0)) for price in prices if price.get('volume')]
-        if volumes:
-            weekly_avg_vol = sum(volumes) / len(volumes)
+    weekly_volatility, weekly_avg_vol = calculate_volatility_and_volume(daily["prices"], ticker, "weekly")
 
     # Calculate quarterly volatility and average volume
-    quarterly_volatility = 0
-    quarterly_avg_vol = 0
     quarterly_prices = [dict(row) for row in conn.execute(text("""
         SELECT * FROM prices WHERE ticker = :ticker AND price_date >= :year_ago ORDER BY price_date DESC
     """), {"ticker": ticker, "year_ago": year_ago}).mappings()]
     
-    if quarterly_prices and len(quarterly_prices) > 1:
-        # Calculate quarterly price volatility
-        returns = []
-        for i in range(1, len(quarterly_prices)):
-            prev_price = float(quarterly_prices[i-1].get('close_price', 0))
-            curr_price = float(quarterly_prices[i].get('close_price', 0))
-            if prev_price > 0:
-                returns.append((curr_price - prev_price) / prev_price)
-        
-        # Only calculate volatility if we have at least 2 returns
-        if len(returns) >= 2:
-            try:
-                quarterly_volatility = statistics.stdev(returns) * 100  # Convert to percentage
-            except Exception as e:
-                print(f"Warning: Could not calculate quarterly volatility for {ticker}: {e}")
-                quarterly_volatility = 0
-        
-        # Calculate quarterly average volume
-        volumes = [float(price.get('volume', 0)) for price in quarterly_prices if price.get('volume')]
-        if volumes:
-            quarterly_avg_vol = sum(volumes) / len(volumes)
+    quarterly_volatility, quarterly_avg_vol = calculate_volatility_and_volume(quarterly_prices, ticker, "quarterly")
 
     # Yearly return pct (from prices, 1 year ago vs now)
     price_now_row = conn.execute(text("""
@@ -747,7 +696,6 @@ def create_prompt_for_ticker(full_data):
     profile = full_data['profile_summary']
     latest_price = full_data['daily']['prices'][0] if full_data['daily']['prices'] else None
     latest_news = full_data['daily']['stock_news'][:2] if full_data['daily']['stock_news'] else []
-    latest_estimates = full_data['quarterly']['analyst_estimates'][:1] if full_data['quarterly']['analyst_estimates'] else []
     previous_allocation = full_data['previous_allocation_pct']
     yearly_return = full_data['yearly_return_pct']
     
@@ -865,117 +813,7 @@ def call_render_endpoint(prompt):
         print(f"Error calling Render endpoint: {e}")
         return None
 
-def extract_llm_response(resp):
-    """
-    Accepts RunPod /status payloads in multiple shapes and returns:
-      - parsed JSON (dict) if the model emitted JSON, or
-      - raw text (str) as a fallback
-    """
-    try:
-        if not resp:
-            return None
 
-        out = resp.get("output")
-        if out is None:
-            return None
-
-        # 1) Plain string output
-        if isinstance(out, str):
-            text = out
-
-        # 2) Dict output (OpenAI-style or wrapper)
-        elif isinstance(out, dict):
-            # common fields seen in workers
-            if "text" in out and isinstance(out["text"], str):
-                text = out["text"]
-            elif "output" in out and isinstance(out["output"], str):
-                text = out["output"]
-            elif "choices" in out and out["choices"]:
-                ch0 = out["choices"][0]
-                # OpenAI compat: message.content or just .text
-                text = (ch0.get("message", {}).get("content")
-                        or ch0.get("text")
-                        or "")
-            else:
-                # last resort: stringify dict
-                text = json.dumps(out)
-
-        # 3) List output (streamed chunks or token lists)
-        elif isinstance(out, list):
-            # Handle tokenized output from RunPod
-            text = ""
-            for item in out:
-                if isinstance(item, str):
-                    text += item
-                elif isinstance(item, dict):
-                    if "output" in item and isinstance(item["output"], str):
-                        text += item["output"]
-                    elif "text" in item and isinstance(item["text"], str):
-                        text += item["text"]
-                    elif "choices" in item and item["choices"]:
-                        ch0 = item["choices"][0]
-                        if "tokens" in ch0 and isinstance(ch0["tokens"], list):
-                            # Join tokens and clean up newlines
-                            tokens_text = "".join(ch0["tokens"])
-                            # Remove extra newlines and spaces
-                            tokens_text = tokens_text.replace("\n\n", "").replace("\n", "")
-                            text += tokens_text
-                        else:
-                            text += (ch0.get("text") or ch0.get("message", {}).get("content") or "")
-                    elif "tokens" in item:
-                        toks = item["tokens"]
-                        if isinstance(toks, list):
-                            tokens_text = "".join(toks)
-                            tokens_text = tokens_text.replace("\n\n", "").replace("\n", "")
-                            text += tokens_text
-                        else:
-                            text += str(toks)
-
-        else:
-            # unknown type
-            text = str(out)
-
-        if not text:
-            return None
-
-        # Try to extract and fix the JSON
-        json_start = text.find('{')
-        if json_start != -1:
-            json_content = text[json_start:]
-            
-            # Fix common issues
-            fixed_json = json_content.replace("'", '"')
-            
-            # Remove trailing characters after last }
-            last_brace = fixed_json.rfind('}')
-            if last_brace != -1:
-                fixed_json = fixed_json[:last_brace + 1]
-            
-            try:
-                parsed_json = json.loads(fixed_json)
-                
-                # Divide new_alloc_pct by S (100) to convert back to decimal form
-                S = 100
-                if 'new_alloc_pct' in parsed_json and isinstance(parsed_json['new_alloc_pct'], (int, float)):
-                    original_value = parsed_json['new_alloc_pct']
-                    parsed_json['new_alloc_pct'] = parsed_json['new_alloc_pct'] / S
-                
-                return parsed_json
-            except json.JSONDecodeError as e:
-                print(f"JSON parsing failed: {e}")
-                
-                # Try to extract ticker from the response for the default function
-                ticker_match = re.search(r'"ticker":\s*"([^"]+)"', text)
-                ticker = ticker_match.group(1) if ticker_match else "UNKNOWN"
-                
-                # Create default JSON response
-                return create_default_json_response(ticker, text)
-
-        return None
-        
-    except Exception as e:
-        print(f"Extractor error: {e}")
-        return None
 
 def create_default_json_response(ticker, text):
     """
@@ -1027,11 +865,9 @@ def create_default_json_response(ticker, text):
 @app.route("/portfolio-analysis", methods=["GET"])
 def portfolio_analysis():
     """Get top 10 allocation differences between FMP API and LLM recommendations"""
-    if not engine:
-        return jsonify({
-            "status": "error", 
-            "error": "Database not configured. Set DATABASE_URL environment variable."
-        }), 500
+    error_response = check_database_configured()
+    if error_response:
+        return error_response
     
     try:
         with engine.connect() as conn:
@@ -1131,11 +967,9 @@ def portfolio_analysis():
 @app.route("/api/stocks/<ticker>/llm-analysis", methods=["POST"])
 def api_llm_analysis(ticker):
     """Send ticker data to LLM for analysis and return the raw response"""
-    if not engine:
-        return jsonify({
-            "status": "error", 
-            "error": "Database not configured. Set DATABASE_URL environment variable."
-        }), 500
+    error_response = check_database_configured()
+    if error_response:
+        return error_response
     
     if not LLM_KEY:
         return jsonify({
