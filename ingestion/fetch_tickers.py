@@ -7,6 +7,14 @@ from dotenv import load_dotenv
 from sqlalchemy import create_engine, Column, String, Date
 from sqlalchemy.orm import declarative_base, sessionmaker
 
+
+"""
+What it does: Fetches the list of S&P 500 stocks from the Financial Modeling Prep API and stores them in the tickers table.
+How it works: Makes a single API call to FMP's sp500_constituent endpoint, processes the JSON response to extract ticker symbols, company names, sectors, and adds a date_added column with today's date.
+Data storage: Stores records in the tickers table with columns for symbol, company_name, sector, and date_added, using upsert logic to avoid duplicates.
+"""
+
+
 # Load environment variables
 load_dotenv(override=True)
 DATABASE_URL = os.getenv('DATABASE_URL')
@@ -64,5 +72,16 @@ def fetch(from_date):
         session.close()
 
 if __name__ == "__main__":
-    default_from_date = (date.today() - timedelta(days=365*3)).isoformat()
-    fetch(default_from_date) 
+    try:
+        default_from_date = (date.today() - timedelta(days=365*3)).isoformat()
+        fetch(default_from_date)
+        
+        # Log successful execution
+        from weekly_stats_manager import log_script_execution
+        log_script_execution("fetch_tickers.py", True)
+        
+    except Exception as e:
+        # Log failed execution
+        from weekly_stats_manager import log_script_execution
+        log_script_execution("fetch_tickers.py", False, str(e))
+        raise 

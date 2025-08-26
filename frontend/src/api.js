@@ -33,16 +33,18 @@ export async function getStockInfo(ticker) {
 
 export async function getPromptData(ticker) {
   try {
-    const response = await fetch(`${API_BASE}/api/stocks/${ticker}/full-data`);
-    if (!response.ok) throw new Error('Failed to fetch prompt data');
-    return await response.json();
+    const response = await fetch(`${API_BASE}/api/stocks/${ticker}/prompt`);
+    const data = await response.json();
+    if (data.status === 'ok') {
+      return data.data;
+    } else {
+      throw new Error(data.error || 'Failed to fetch prompt data');
+    }
   } catch (error) {
     console.error('Error fetching prompt data:', error);
     throw error;
   }
 }
-
-
 
 // Portfolio Management Functions
 export async function getAccountInfo() {
@@ -116,55 +118,6 @@ export async function getActivityHistory() {
     }
   } catch (error) {
     console.error('Error fetching activity history:', error);
-    throw error;
-  }
-}
-
-export async function getOpenOrders() {
-  try {
-    const response = await fetch(`${API_BASE}/api/orders?status=open`);
-    const data = await response.json();
-    if (data.status === 'ok') {
-      return data.orders;
-    } else {
-      throw new Error(data.error || 'Failed to fetch open orders');
-    }
-  } catch (error) {
-    console.error('Error fetching open orders:', error);
-    throw error;
-  }
-}
-
-export async function cancelOrder(orderId) {
-  try {
-    const response = await fetch(`${API_BASE}/api/orders/${orderId}`, {
-      method: 'DELETE'
-    });
-    const data = await response.json();
-    if (data.status === 'ok') {
-      return data;
-    } else {
-      throw new Error(data.error || 'Failed to cancel order');
-    }
-  } catch (error) {
-    console.error('Error cancelling order:', error);
-    throw error;
-  }
-}
-
-export async function cancelAllOrders() {
-  try {
-    const response = await fetch(`${API_BASE}/api/orders`, {
-      method: 'DELETE'
-    });
-    const data = await response.json();
-    if (data.status === 'ok') {
-      return data;
-    } else {
-      throw new Error(data.error || 'Failed to cancel all orders');
-    }
-  } catch (error) {
-    console.error('Error cancelling all orders:', error);
     throw error;
   }
 }

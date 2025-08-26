@@ -7,6 +7,12 @@ from dotenv import load_dotenv
 import time
 import os
 
+"""
+What it does: Fetches stock news (headlines, summaries, and URLs) for all S&P 500 stocks from the Financial Modeling Prep API, going back 3 years by default.
+How it works: Loops through each ticker in the database, makes API calls with a 0.21-second delay to respect rate limits, filters for recent data since the specified date, and processes each news item.
+Data storage: Stores records in the stock_news table with columns for url, symbol, published_date, publisher, title, image, site, text, and source='FMP', using upsert logic to avoid duplicates.
+"""
+
 #Daily
 
 # Load environment (override if already set)
@@ -113,5 +119,16 @@ def fetch(from_date):
         session.close()
 
 if __name__ == '__main__':
-    default_from_date = (date.today() - timedelta(days=365*3)).isoformat()
-    fetch(default_from_date)
+    try:
+        default_from_date = (date.today() - timedelta(days=365*3)).isoformat()
+        fetch(default_from_date)
+        
+        # Log successful execution
+        from weekly_stats_manager import log_script_execution
+        log_script_execution("fetch_stock_news.py", True)
+        
+    except Exception as e:
+        # Log failed execution
+        from weekly_stats_manager import log_script_execution
+        log_script_execution("fetch_stock_news.py", False, str(e))
+        raise

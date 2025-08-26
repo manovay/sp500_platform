@@ -7,6 +7,15 @@ from dotenv import load_dotenv
 import time
 import os
 
+
+"""
+What it does: Fetches historical analyst ratings (buy/hold/sell/strong sell) 
+for all tickers from the Financial Modeling Prep API, going back 3 years by default.
+How it works: Loops through all tickers in the database, makes API calls to FMP with a 0.21-second delay
+between requests to respect rate limits, filters for recent data since the specified date, and processes each rating record.
+Data storage: Stores records in the grades_historical table with columns 
+for symbol, rating date, analyst ratings counts for each category (buy/hold/sell/strong sell), and source (FMP), using upsert logic to avoid duplicates based on symbol and rating date.
+"""
 #Weekly
 
 # Load environment (override if already set)
@@ -104,5 +113,16 @@ def fetch(from_date):
         session.close()
 
 if __name__ == '__main__':
-    default_from_date = (date.today() - timedelta(days=365*3)).isoformat()
-    fetch(default_from_date)
+    try:
+        default_from_date = (date.today() - timedelta(days=365*3)).isoformat()
+        fetch(default_from_date)
+        
+        # Log successful execution
+        from weekly_stats_manager import log_script_execution
+        log_script_execution("fetch_historical_analyst.py", True)
+        
+    except Exception as e:
+        # Log failed execution
+        from weekly_stats_manager import log_script_execution
+        log_script_execution("fetch_historical_analyst.py", False, str(e))
+        raise

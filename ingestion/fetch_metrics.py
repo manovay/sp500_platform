@@ -7,6 +7,15 @@ from sqlalchemy.dialects.postgresql import insert
 import requests
 import time
 
+"""
+What it does: Fetches key financial metrics (P/E ratio, market cap, debt-to-equity, etc.) 
+for all S&P 500 stocks from the Financial Modeling Prep API, going back 3 years.
+How it works: Loops through each ticker in the database, makes API calls with a 0.21-second delay to respect rate limits, 
+and processes annual metrics data for each company.
+How data is stored: Saves each metric entry as a complete JSON object in 
+the key_metrics table with columns for ticker, date, and the full metrics data, using upsert logic to avoid duplicates."""
+
+
 # Load environment variables
 load_dotenv(override=True)
 FMP_API_KEY = os.getenv('FMP_API_KEY')
@@ -110,5 +119,16 @@ def fetch(from_date):
         session.close()
 
 if __name__ == "__main__":
-    default_from_date = (date.today() - timedelta(days=365*3)).isoformat()
-    fetch(default_from_date)
+    try:
+        default_from_date = (date.today() - timedelta(days=365*3)).isoformat()
+        fetch(default_from_date)
+        
+        # Log successful execution
+        from weekly_stats_manager import log_script_execution
+        log_script_execution("fetch_metrics.py", True)
+        
+    except Exception as e:
+        # Log failed execution
+        from weekly_stats_manager import log_script_execution
+        log_script_execution("fetch_metrics.py", False, str(e))
+        raise

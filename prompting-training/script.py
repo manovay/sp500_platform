@@ -217,7 +217,7 @@ def build_full_prompt(ticker, snapshot_date):
 print(build_full_prompt("AAPL", pd.to_datetime("2025-04-10")))
 
 # %%
-import os; os.environ["HF_TOKEN"] = "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"
+import os; os.environ["HF_TOKEN"] = ""
 !pip install --quiet huggingface_hub && huggingface-cli login --token "$HF_TOKEN"
 
 # %%

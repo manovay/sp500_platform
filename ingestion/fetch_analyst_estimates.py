@@ -7,7 +7,19 @@ from dotenv import load_dotenv
 import time
 import os
 
-#Quarterly
+
+"""
+*What it does**: Fetches quarterly analyst estimates (revenue, EBITDA, EPS forecasts) 
+for all S&P 500 stocks from Financial Modeling Prep API, going back 3 years by default
+
+How it works**: Loops through each ticker, makes paginated API calls with rate limiting (0.21s delay), 
+filters for recent data since the specified date, and upserts records to avoid duplicates
+
+*Data storage**: Stores in `analyst_estimates` table with columns for symbol, 
+report_date, revenue/EBITDA/EPS estimates (low/high/avg), analyst counts, and source='FMP', 
+using upsert logic to update existing records
+"""
+#Qarterly
 
 # Load environment (override if already set)
 load_dotenv(override=True)
@@ -144,12 +156,23 @@ def fetch(from_date):
         session.commit()
         print(f"\u2705 Quarterly analyst estimates: Inserted={inserted}, Updated={updated}, Skipped={skipped}")
     except Exception as e:
-        print(f"❌ An error occurred during the analyst estimates fetching process: {str(e)}")
+        print(f" An error occurred during the analyst estimates fetching process: {str(e)}")
         session.rollback()
         raise
     finally:
         session.close()
 
 if __name__ == '__main__':
-    default_from_date = (date.today() - timedelta(days=365*3)).isoformat()
-    fetch(default_from_date)
+    try:
+        default_from_date = (date.today() - timedelta(days=365*3)).isoformat()
+        fetch(default_from_date)
+        
+        # Log successful execution
+        from weekly_stats_manager import log_script_execution
+        log_script_execution("fetch_analyst_estimates.py", True)
+        
+    except Exception as e:
+        # Log failed execution
+        from weekly_stats_manager import log_script_execution
+        log_script_execution("fetch_analyst_estimates.py", False, str(e))
+        raise

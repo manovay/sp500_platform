@@ -38,17 +38,17 @@ def migrate_existing_allocations():
             print("Adding unique constraint...")
             try:
                 cur.execute(add_constraint_sql)
-                print("✅ Added unique constraint")
+                print(" Added unique constraint")
             except psycopg2.errors.DuplicateTable:
-                print("ℹ️  Unique constraint already exists")
+                print("ℹUnique constraint already exists")
             
             print("Migrating allocation data...")
             cur.execute(migrate_sql)
             conn.commit()
-            print(f"✅ Migrated {cur.rowcount} allocation records")
+            print(f"Migrated {cur.rowcount} allocation records")
             
     except Exception as e:
-        print(f"❌ Error during migration: {e}")
+        print(f"Error during migration: {e}")
         raise
 
 if __name__ == "__main__":

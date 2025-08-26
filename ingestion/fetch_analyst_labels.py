@@ -7,6 +7,16 @@ from dotenv import load_dotenv
 import time
 import os
 
+"""
+What it does: Fetches analyst rating data for all tickers from Financial Modeling Prep API, including overall scores, 
+individual metric scores (DCF, ROE, ROA, debt-to-equity, P/E, P/B ratios), and analyst ratings.
+
+How it works: Loops through all tickers in the database, makes API calls to FMP's ratings-snapshot endpoint with a 0.21-second delay between requests to respect rate limits,
+and processes the JSON response to extract scoring data.
+
+How data is stored: Uses PostgreSQL upsert logic (INSERT ... ON CONFLICT DO UPDATE) 
+to store daily records in the analyst_labels table with columns for ticker, date, rating, overall_score, and individual metric scores, updating existing records for the same ticker/date combination.
+"""
 #Daily
 
 # Load environment with override
@@ -110,12 +120,23 @@ def fetch(from_date):
         session.commit()
         print(f"\u2705 Analyst labels: Inserted={inserted}, Updated={updated}, Skipped={skipped}")
     except Exception as e:
-        print(f"❌ An error occurred during the analyst labels fetching process: {str(e)}")
+        print(f"An error occurred during the analyst labels fetching process: {str(e)}")
         session.rollback()
         raise
     finally:
         session.close()
 
 if __name__ == '__main__':
-    default_from_date = (date.today() - timedelta(days=365*3)).isoformat()
-    fetch(default_from_date)
+    try:
+        default_from_date = (date.today() - timedelta(days=365*3)).isoformat()
+        fetch(default_from_date)
+        
+        # Log successful execution
+        from weekly_stats_manager import log_script_execution
+        log_script_execution("fetch_analyst_labels.py", True)
+        
+    except Exception as e:
+        # Log failed execution
+        from weekly_stats_manager import log_script_execution
+        log_script_execution("fetch_analyst_labels.py", False, str(e))
+        raise

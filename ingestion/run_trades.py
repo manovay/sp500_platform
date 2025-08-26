@@ -10,6 +10,13 @@ import requests
 from decimal import Decimal, ROUND_DOWN
 from datetime import date, timedelta
 
+"""
+What it does: Rebalances the portfolio based on the latest allocations from the database.
+How it works: Fetches the latest allocations from the database, calculates the target portfolio value, and submits orders to Alpaca to rebalance the portfolio.
+Data storage: Stores the actual allocations after rebalancing in the actual_portfolio_allocations table.
+"""
+
+
 # ── Config ─────────────────────────────────────────────────────────────────────
 DATABASE_URL = os.getenv("DATABASE_URL")
 ALPACA_KEY   = os.getenv("ALPACA_KEY")
@@ -203,7 +210,7 @@ def main():
         # Convert ticker name for Alpaca if needed
         alpaca_symbol = convert_ticker_for_alpaca(sym)
         if alpaca_symbol != sym:
-            print(f"  🔄 Converting ticker: {sym} -> {alpaca_symbol}")
+            print(f" Converting ticker: {sym} -> {alpaca_symbol}")
         
         od = {
             "symbol": alpaca_symbol,
@@ -229,9 +236,9 @@ def main():
     print(f"  Sum of Target Percentages: {target_pct_sum:.2f}%")
     
     if abs(target_pct_sum - Decimal("100.0")) > Decimal("0.01"):
-        print(f"  ⚠️  WARNING: Target percentages don't sum to 100% (off by {target_pct_sum - Decimal('100.0'):.2f}%)")
+        print(f" WARNING: Target percentages don't sum to 100% (off by {target_pct_sum - Decimal('100.0'):.2f}%)")
     else:
-        print(f"  ✅ Target percentages sum to 100% correctly")
+        print(f" Target percentages sum to 100% correctly")
 
     if DRY_RUN:
         # show first few orders verbosely
@@ -278,4 +285,15 @@ def fetch(from_date=None, limit=None):
     return main()
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+        
+        # Log successful execution
+        from weekly_stats_manager import log_script_execution
+        log_script_execution("run_trades.py", True)
+        
+    except Exception as e:
+        # Log failed execution
+        from weekly_stats_manager import log_script_execution
+        log_script_execution("run_trades.py", False, str(e))
+        raise

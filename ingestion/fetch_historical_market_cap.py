@@ -131,17 +131,28 @@ def fetch(from_date):
             WHERE a.allocation_date = totals.allocation_date;
         """))
         session.commit()
-        print("✅ allocation_pct updated for all dates.")
+        print("allocation_pct updated for all dates.")
 
         print(f"\n🏁 Finished. Total upserted: {total_upserts}, Skipped: {skipped_tickers}")
 
     except Exception as e:
-        print(f"❌ Fatal error: {e}")
+        print(f" Fatal error: {e}")
         session.rollback()
         raise
     finally:
         session.close()
 
 if __name__ == "__main__":
-    default_from_date = (date.today() - timedelta(days=365*3)).isoformat()
-    fetch(default_from_date)
+    try:
+        default_from_date = (date.today() - timedelta(days=365*3)).isoformat()
+        fetch(default_from_date)
+        
+        # Log successful execution
+        from weekly_stats_manager import log_script_execution
+        log_script_execution("fetch_historical_market_cap.py", True)
+        
+    except Exception as e:
+        # Log failed execution
+        from weekly_stats_manager import log_script_execution
+        log_script_execution("fetch_historical_market_cap.py", False, str(e))
+        raise

@@ -5,6 +5,13 @@ from dotenv import load_dotenv
 import importlib
 from sqlalchemy import create_engine, text
 
+"""
+What it does: Runs all data fetching scripts in the correct order, with appropriate frequency checks and error handling.
+How it works: Loops through each script, checks if it should run based on frequency and last_run_date, calls the fetch function, and updates the last_run_date.
+It also runs the run_trades script after all data fetching is complete.
+Data storage: Updates the ingestion_metadata table with the last_run_date for each script.
+"""
+
 # Add parent directory to Python path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -90,8 +97,16 @@ def update_last_run_date(script):
         )
         conn.commit()
 
+def run_weekly_stats_and_email():
+    """Run weekly stats collection and email reporting using consolidated manager"""
+    try:
+        from weekly_stats_manager import run_weekly_stats_and_email
+        run_weekly_stats_and_email()
+    except Exception as e:
+        print(f"[{datetime.now().isoformat()}]Error in weekly stats/email: {e}")
+
 def main():
-    print(f"\n[{datetime.now().isoformat()}] 🚀 Starting the scheduled data fetching pipeline...\n")
+    print(f"\n[{datetime.now().isoformat()}] Starting the scheduled data fetching pipeline...\n")
     
     meta_info = get_meta_info()
     failed_orders = []
@@ -110,10 +125,10 @@ def main():
                 update_last_run_date(script)
                 print(f"[{datetime.now().isoformat()}] --- {script}.py finished successfully and last_run_date updated ---")
             except Exception as e:
-                print(f"[{datetime.now().isoformat()}] ❌ Error running {script}: {e}")
+                print(f"[{datetime.now().isoformat()}] Error running {script}: {e}")
                 break
         else:
-            print(f"[{datetime.now().isoformat()}] ⏩ Skipping {script}.py (frequency: {freq}, last_run_date: {last_run}) - Not due yet.")
+            print(f"[{datetime.now().isoformat()}] Skipping {script}.py (frequency: {freq}, last_run_date: {last_run}) - Not due yet.")
     
     # Always run run_trades if all data fetching succeeded
     try:
@@ -122,20 +137,23 @@ def main():
         failed_orders = module.fetch()  # Capture failed orders
         print(f"[{datetime.now().isoformat()}] --- run_trades.py finished ---")
     except Exception as e:
-        print(f"[{datetime.now().isoformat()}] ❌ Error running run_trades: {e}")
+        print(f"[{datetime.now().isoformat()}]  Error running run_trades: {e}")
+    
+    # Run weekly stats collection and email reporting
+    run_weekly_stats_and_email()
     
     print(f"\n[{datetime.now().isoformat()}] --- Pipeline Execution Summary ---")
-    print(f"[{datetime.now().isoformat()}] 🎉 All due fetch modules executed (or stopped on error).")
+    print(f"[{datetime.now().isoformat()}]  All due fetch modules executed (or stopped on error).")
     
     # Display failed orders if any
     if failed_orders:
-        print(f"\n[{datetime.now().isoformat()}] ❌ FAILED ORDERS SUMMARY:")
+        print(f"\n[{datetime.now().isoformat()}]  FAILED ORDERS SUMMARY:")
         print(f"[{datetime.now().isoformat()}] Total failed orders: {len(failed_orders)}")
         for i, order in enumerate(failed_orders, 1):
             print(f"[{datetime.now().isoformat()}] {i}. {order['symbol']} {order['side'].upper()} ${order['notional']:.2f} - Error: {order['error']}")
-        print(f"\n[{datetime.now().isoformat()}] ⚠️  Please review and manually handle these failed orders.")
+        print(f"\n[{datetime.now().isoformat()}]   Please review and manually handle these failed orders.")
     else:
-        print(f"[{datetime.now().isoformat()}] ✅ No failed orders to report.")
+        print(f"[{datetime.now().isoformat()}]  No failed orders to report.")
     
     print()
 

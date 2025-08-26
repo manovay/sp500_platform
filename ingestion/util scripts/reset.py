@@ -11,7 +11,7 @@ def drop_all_tables():
     database_url = os.getenv('DATABASE_URL')
     engine = create_engine(database_url)
     
-    print("🗑️  Dropping all existing tables...")
+    print(" Dropping all existing tables...")
     with engine.connect() as connection:
         # Drop all tables in the correct order (respecting foreign keys)
         drop_sql = """
@@ -32,7 +32,7 @@ def drop_all_tables():
         """
         connection.execute(text(drop_sql))
         connection.commit()
-    print("✅ All tables dropped successfully")
+    print("All tables dropped successfully")
 
 def init_database():
     """Initialize fresh database with schema and metadata"""
@@ -52,21 +52,21 @@ def init_database():
     with engine.connect() as connection:
         connection.execute(text(schema_sql))
         connection.commit()
-    print("✅ Database schema created successfully")
+    print(" Database schema created successfully")
     
     # Seed ingestion_metadata with the actual last run dates you provided
     seed_sql = """
     INSERT INTO ingestion_metadata (table_name, frequency, script_name, last_run_date)
     VALUES
-      ('tickers',           'quarterly', 'fetch_tickers.py', '2025-06-11'),
-      ('prices',            'daily',     'fetch_prices.py', '2025-06-11'),
-      ('analyst_labels',    'daily',     'fetch_analyst_labels.py', '2025-06-11'),
-      ('analyst_estimates', 'quarterly', 'fetch_analyst_estimates.py', '2025-06-13'),
-      ('grades_historical', 'weekly',    'fetch_historical_analyst.py', '2025-06-01'),
-      ('stock_news',        'daily',     'fetch_stock_news.py', '2025-06-11'),
-      ('key_metrics',       'annual',    'fetch_metrics.py', '2025-06-13'),
-      ('profiles',          'annual',    'fetch_profile.py', '2025-06-11'),
-      ('allocations',       'weekly',    'fetch_historical_market_cap.py', '2025-06-13'),
+      ('tickers',           'quarterly', 'fetch_tickers.py', '2025-08-25'),
+      ('prices',            'daily',     'fetch_prices.py', '2025-08-25'),
+      ('analyst_labels',    'daily',     'fetch_analyst_labels.py', '2025-08-25'),
+      ('analyst_estimates', 'quarterly', 'fetch_analyst_estimates.py', '2025-08-25'),
+      ('grades_historical', 'weekly',    'fetch_historical_analyst.py', '2025-08-25'),
+      ('stock_news',        'daily',     'fetch_stock_news.py', '2025-08-25'),
+      ('key_metrics',       'annual',    'fetch_metrics.py', '2025-08-25'),
+      ('profiles',          'annual',    'fetch_profile.py', '2025-08-25'),
+      ('allocations',       'weekly',    'fetch_historical_market_cap.py', '2025-08-25'),
       ('predictions',       'weekly',    NULL, NULL),
       ('weekly_llm_data',   'weekly',    'fetch_weekly_llm.py', NULL)
     ON CONFLICT (table_name) DO UPDATE
@@ -77,7 +77,7 @@ def init_database():
     with engine.connect() as conn:
         conn.execute(text(seed_sql))
         conn.commit()
-    print("✅ ingestion_metadata seeded with actual last run dates")
+    print("ingestion_metadata seeded with actual last run dates")
 
 def upload_csv_to_table(csv_path, table_name, conn):
     """Upload CSV data to table"""
@@ -105,23 +105,23 @@ def upload_current_data():
         "stock_news.csv": "stock_news",
     }
     
-    print("📥 Uploading current CSV data...")
+    print(" Uploading current CSV data...")
     for csv, table in csv_table_map.items():
         csv_path = f"../../csvs/{csv}"
         if os.path.exists(csv_path):
             print(f"  Uploading {csv} to {table}...")
             upload_csv_to_table(csv_path, table, conn)
         else:
-            print(f"  ⚠️  {csv} not found, skipping...")
+            print(f"{csv} not found, skipping...")
     
     conn.close()
-    print("✅ Current data upload complete")
+    print("Current data upload complete")
 
 
 
 def main():
     """Main function: Delete DB and upload current data"""
-    print("🚀 Starting complete database refresh process...")
+    print(" Starting complete database refresh process...")
     
     # Step A: Delete current database
     drop_all_tables()
@@ -130,7 +130,7 @@ def main():
     init_database()
     upload_current_data()
     
-    print("\n🎉 Complete database refresh process finished!")
+    print(" Complete database refresh process finished!")
 
 if __name__ == "__main__":
     main()

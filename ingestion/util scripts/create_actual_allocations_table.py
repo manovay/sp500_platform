@@ -37,7 +37,7 @@ def create_actual_allocations_table():
             cur.execute(create_indexes_sql)
             
             conn.commit()
-            print("✅ Successfully created actual_portfolio_allocations table and indexes")
+            print("Successfully created actual_portfolio_allocations table and indexes")
             
             # Verify the table was created
             cur.execute("""
@@ -45,9 +45,9 @@ def create_actual_allocations_table():
                 WHERE table_name = 'actual_portfolio_allocations'
             """)
             if cur.fetchone()[0] > 0:
-                print("✅ Table verification successful")
+                print("Table verification successful")
             else:
-                print("❌ Table creation failed")
+                print("Table creation failed")
                 
     except Exception as e:
         print(f"❌ Error creating table: {e}")

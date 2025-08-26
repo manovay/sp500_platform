@@ -7,6 +7,12 @@ from sqlalchemy.dialects.postgresql import insert
 import requests
 import time
 
+"""
+What it does: Fetches company profile data (name, description, industry, sector, etc.) for all S&P 500 stocks from the Financial Modeling Prep API, going back 3 years by default.
+How it works: Loops through each ticker in the database, makes API calls with a 0.21-second delay to respect rate limits, and processes each profile record.
+Data storage: Stores records in the profiles table with columns for symbol, date, and the full profile data, using upsert logic to avoid duplicates.
+"""
+
 #Annual
 
 # Load environment variables
@@ -100,5 +106,16 @@ def fetch(from_date):
         session.close()
 
 if __name__ == "__main__":
-    default_from_date = (date.today() - timedelta(days=365*3)).isoformat()
-    fetch(default_from_date)
+    try:
+        default_from_date = (date.today() - timedelta(days=365*3)).isoformat()
+        fetch(default_from_date)
+        
+        # Log successful execution
+        from weekly_stats_manager import log_script_execution
+        log_script_execution("fetch_profile.py", True)
+        
+    except Exception as e:
+        # Log failed execution
+        from weekly_stats_manager import log_script_execution
+        log_script_execution("fetch_profile.py", False, str(e))
+        raise

@@ -9,6 +9,12 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.ext.declarative import declarative_base
 import re
 
+"""
+What it does: Fetches data for all S&P 500 stocks and processes it for LLM analysis.
+How it works: Loops through each ticker, fetches data from the database, and creates a prompt for the LLM.
+It then calls the LLM API, waits for the response, and saves the response to the database.
+"""
+
 # Load environment variables
 load_dotenv(override=True)
 
@@ -732,4 +738,15 @@ def main():
     fetch(limit=600)
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+        
+        # Log successful execution
+        from weekly_stats_manager import log_script_execution
+        log_script_execution("fetch_weekly_llm.py", True)
+        
+    except Exception as e:
+        # Log failed execution
+        from weekly_stats_manager import log_script_execution
+        log_script_execution("fetch_weekly_llm.py", False, str(e))
+        raise
