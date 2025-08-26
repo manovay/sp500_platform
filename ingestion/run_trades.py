@@ -19,6 +19,15 @@ MIN_TRADE_NOTIONAL = Decimal(os.getenv("MIN_TRADE_NOTIONAL", "5"))
 DRY_RUN = os.getenv("DRY_RUN", "1") == "1"
 POST_SLEEP_SECS = float(os.getenv("POST_SLEEP_SECS", "0.35"))
 
+def convert_ticker_for_alpaca(ticker):
+    """Convert ticker names from database format to Alpaca format"""
+    # Known tickers that need conversion: BF-B -> BF.B, BRK-B -> BRK.B
+    ticker_conversions = {
+        "BF-B": "BF.B",
+        "BRK-B": "BRK.B"
+    }
+    return ticker_conversions.get(ticker, ticker)
+
 required = ("DATABASE_URL","ALPACA_KEY","ALPACA_SECRET")
 missing = [k for k in required if not os.getenv(k)]
 if missing:
@@ -135,12 +144,6 @@ def main():
     weights_raw, snap_date = fetch_latest_allocations()
     print(f"[db] latest allocation_date={snap_date}  tickers={len(weights_raw)}")
     
-    # Add this section to show raw allocation percentages
-    print("\n[ALLOCATIONS] Raw percentages from database:")
-    for ticker, pct in sorted(weights_raw.items(), key=lambda x: x[1], reverse=True):
-        if pct > 0:
-            print(f"  {ticker}: {pct:.4f}%")
-    
     sum_all = sum(weights_raw.values())
     pos_items = {t: w for t, w in weights_raw.items() if w > 0}
     sum_pos = sum(pos_items.values())
@@ -151,11 +154,6 @@ def main():
     # Normalize positive weights to 1.0; zeros/negatives target $0
     weights = {t: (w / sum_pos) for t, w in pos_items.items()}
     print(f"[normalize] positive tickers={len(weights)}  sum(normalized)={sum(weights.values()):.10f}")
-    
-    # Add this section to show normalized weights
-    print("\n[NORMALIZED] Weights after normalization (sum=1.0):")
-    for ticker, norm_pct in sorted(weights.items(), key=lambda x: x[1], reverse=True):
-        print(f"  {ticker}: {norm_pct:.4f} ({norm_pct*100:.2f}%)")
 
     equity = get_account_equity()
     cur_vals = positions_value_map()
@@ -185,7 +183,7 @@ def main():
         tgt_pct = (tgt_val / equity * 100) if equity > 0 else 0
 
         if delta.copy_abs() < MIN_TRADE_NOTIONAL:
-            print(f"[{idx:03d}/{len(symbols)}][skip<min] {sym}  raw_pct={raw_pct:.4f}%  norm_pct={norm_pct:.4f}  cur_pct={cur_pct:.2f}%  cur=${cur_val}  tgt=${tgt_val}  tgt_pct={tgt_pct:.2f}%  Δ=${delta}")
+            # print(f"[{idx:03d}/{len(symbols)}][skip<min] {sym}  raw_pct={raw_pct:.4f}%  norm_pct={norm_pct:.4f}  cur_pct={cur_pct:.2f}%  cur=${cur_val}  tgt=${tgt_val}  tgt_pct={tgt_pct:.2f}%  Δ=${delta}")
             skipped_small += 1
             continue
 
@@ -198,18 +196,23 @@ def main():
 
         notional = notional.quantize(Decimal("0.01"), rounding=ROUND_DOWN)
         if notional < MIN_TRADE_NOTIONAL:
-            print(f"[{idx:03d}/{len(symbols)}][skip<min-cap] {sym}  raw_pct={raw_pct:.4f}%  norm_pct={norm_pct:.4f}  Δ→${notional}")
+            # print(f"[{idx:03d}/{len(symbols)}][skip<min-cap] {sym}  raw_pct={raw_pct:.4f}%  norm_pct={norm_pct:.4f}  Δ→${notional}")
             skipped_small += 1
             continue
 
+        # Convert ticker name for Alpaca if needed
+        alpaca_symbol = convert_ticker_for_alpaca(sym)
+        if alpaca_symbol != sym:
+            print(f"  🔄 Converting ticker: {sym} -> {alpaca_symbol}")
+        
         od = {
-            "symbol": sym,
+            "symbol": alpaca_symbol,
             "side": side,
             "type": "market",
             "time_in_force": "day",       # fractional/notional orders require DAY
             "notional": float(notional),  # dollars
         }
-        print(f"[{idx:03d}/{len(symbols)}][plan] {sym}  raw_pct={raw_pct:.4f}%  norm_pct={norm_pct:.4f}  cur_pct={cur_pct:.2f}%  cur=${cur_val}  tgt=${tgt_val}  tgt_pct={tgt_pct:.2f}%  Δ=${delta}  -> {side.upper()} ${notional}")
+        # print(f"[{idx:03d}/{len(symbols)}][plan] {sym}  raw_pct={raw_pct:.4f}%  norm_pct={norm_pct:.4f}  cur_pct={cur_pct:.2f}%  cur=${cur_val}  tgt=${tgt_val}  tgt_pct={tgt_pct:.2f}%  Δ=${delta}  -> {side.upper()} ${notional}")
         to_submit.append(od)
 
     print(f"[plan] orders_to_submit={len(to_submit)}  skipped_small={skipped_small}  dry_run={DRY_RUN}")
@@ -237,14 +240,21 @@ def main():
         return
 
     ok, fail = 0, 0
+    failed_orders = []
     for i, od in enumerate(to_submit, 1):
         try:
             resp = apost("/orders", od)
-            print(f"[submit {i}/{len(to_submit)}] {od['symbol']} {od['side']} ${od['notional']} -> {resp.get('status')} id={resp.get('id')}")
+            # print(f"[submit {i}/{len(to_submit)}] {od['symbol']} {od['side']} ${od['notional']} -> {resp.get('status')} id={resp.get('id')}")
             ok += 1
         except requests.HTTPError as e:
             msg = e.response.text if e.response is not None else str(e)
-            print(f"[error  {i}/{len(to_submit)}] {od['symbol']} {od['side']} ${od['notional']} -> {msg[:500]}")
+            print(f"[ERROR] {od['symbol']} {od['side']} ${od['notional']} -> {msg[:200]}")
+            failed_orders.append({
+                'symbol': od['symbol'],
+                'side': od['side'],
+                'notional': od['notional'],
+                'error': msg[:200]
+            })
             fail += 1
         time.sleep(POST_SLEEP_SECS)  # be kind to the API
 
@@ -255,14 +265,17 @@ def main():
         store_actual_allocations(weights, equity, snap_date)
     
     print("== Rebalance end ==")
+    
+    return failed_orders
 
 def fetch(from_date=None, limit=None):
     """
     Wrapper function to make run_trades compatible with run_all.py
     Ignores from_date and limit parameters since this is a trading script
+    Returns failed orders for tracking
     """
     print("Starting portfolio rebalancing...")
-    main()
+    return main()
 
 if __name__ == "__main__":
     main()

@@ -27,9 +27,19 @@ export default function Step4_ShowResult({ prompt, onResult, result, onBack, onR
     setLlmLoading(true);
     setLlmResponse(null);
     try {
-      const resp = await fetch(`/api/stocks/${stock.ticker}/llm-verdict`, { method: 'POST' });
+      const resp = await fetch(`/api/stocks/${stock.ticker}/llm-analysis`, { 
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      });
       const data = await resp.json();
-      setLlmResponse(data.llm_response);
+      
+      if (data.status === 'ok') {
+        setLlmResponse(data.raw_response);
+      } else {
+        setLlmResponse({ error: data.error || 'Unknown error occurred' });
+      }
     } catch (e) {
       setLlmResponse({ error: e.message });
     }
@@ -45,10 +55,20 @@ export default function Step4_ShowResult({ prompt, onResult, result, onBack, onR
         <button onClick={onReset}>Start Over</button>
         {stock && localResult && (
           <button onClick={handleLlmVerdict} style={{ marginLeft: '1rem' }} disabled={llmLoading}>
-            {llmLoading ? 'Getting LLM Verdict…' : 'Get LLM Verdict'}
+            {llmLoading ? 'Getting LLM Verdict (this may take 2-3 minutes)…' : 'Get LLM Verdict'}
           </button>
         )}
       </div>
+      {llmLoading && (
+        <div style={{ marginTop: '1rem', padding: '1rem', background: '#1a1a1a', borderRadius: '8px', border: '1px solid #333' }}>
+          <p style={{ margin: '0 0 0.5rem 0', color: '#a1a1aa' }}>
+            <strong>Processing LLM Analysis...</strong>
+          </p>
+          <p style={{ margin: '0', fontSize: '0.9rem', color: '#71717a' }}>
+            This may take 2-3 minutes as we analyze the stock data and generate recommendations.
+          </p>
+        </div>
+      )}
       {llmResponse && (
         <div style={{ marginTop: '2rem', textAlign: 'left' }}>
           <h3>LLM Verdict:</h3>

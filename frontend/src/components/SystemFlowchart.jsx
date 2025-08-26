@@ -35,7 +35,7 @@ const FLOW_DATA = {
       title: "Weekly scraper cron",
       summary: "Fetches/updates weekly data into the DB.",
       tags: ["cron", "etl"],
-      links: [{ label: "Cron file", href: "SCRAPER_FILE_URL" }],
+      links: [{ label: "Cron file", href: "https://github.com/manovay/sp500_platform/blob/master/ingestion/run_all.py" }],
     },
     {
       id: "db_history",
@@ -51,7 +51,7 @@ const FLOW_DATA = {
       type: "JOB",
       title: "Prompt builder",
       summary: "Builds LLM prompt from metrics.",
-      links: [{ label: "Prompt code", href: "PROMPT_FILE_URL" }],
+      links: [{ label: "Prompt code", href: "https://github.com/manovay/sp500_platform/blob/master/ingestion/fetch_weekly_llm.py" }],
       meta: { prompt: "Given stock metrics, allocate portfolio weights..." },
     },
     {
@@ -59,7 +59,7 @@ const FLOW_DATA = {
       type: "EXT",
       title: "Fine-tuned LLM (Runpod)",
       summary: "Receives the prompt and returns JSON allocation output.",
-      links: [{ label: "LLM link", href: "LLM_URL" }],
+      links: [{ label: "LLM link", href: "https://huggingface.co/mdot77/llama2-7b-forecaster-merged" }],
     },
     {
       id: "db_llm_json",
@@ -73,7 +73,7 @@ const FLOW_DATA = {
       type: "JOB",
       title: "Trade executor",
       summary: "Executes fractional notional orders per allocation via Alpaca.",
-      links: [{ label: "Trades file", href: "TRADES_FILE_URL" }],
+      links: [{ label: "Trades file", href: "https://github.com/manovay/sp500_platform/blob/master/ingestion/run_trades.py" }],
     },
     {
       id: "ext_alpaca",
@@ -92,7 +92,7 @@ const FLOW_DATA = {
       type: "UI",
       title: "Frontend app",
       summary: "Overview, History, Analysis, Test pages.",
-      links: [{ label: "Frontend entry", href: "FRONTEND_FILE_URL" }],
+      links: [{ label: "Frontend entry", href: "https://github.com/manovay/sp500_platform/tree/master/frontend" }],
     },
   ],
   flows: [

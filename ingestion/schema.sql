@@ -158,6 +158,14 @@ CREATE TABLE ingestion_metadata (
 ALTER TABLE ingestion_metadata ADD COLUMN script_name TEXT;
 ALTER TABLE ingestion_metadata ADD COLUMN last_run_date DATE;
 
+-- Add smart scheduling columns
+ALTER TABLE ingestion_metadata ADD COLUMN smart_boundary BOOLEAN DEFAULT FALSE;
+ALTER TABLE ingestion_metadata ADD COLUMN boundary_days INTEGER DEFAULT 7;
+
+-- Add S&P 500 tracking
+ALTER TABLE ingestion_metadata ADD COLUMN sp500_tracked BOOLEAN DEFAULT FALSE;
+ALTER TABLE ingestion_metadata ADD COLUMN last_sp500_check DATE;
+
 -- Weekly LLM prompts and responses table
 CREATE TABLE IF NOT EXISTS weekly_llm_data (
     id SERIAL PRIMARY KEY,
@@ -174,3 +182,21 @@ CREATE TABLE IF NOT EXISTS weekly_llm_data (
 -- Index for performance
 CREATE INDEX IF NOT EXISTS idx_weekly_llm_ticker_week ON weekly_llm_data (ticker, week_start_date);
 CREATE INDEX IF NOT EXISTS idx_weekly_llm_status ON weekly_llm_data (status);
+
+-- Enable smart scheduling for quarterly/annual scripts
+UPDATE ingestion_metadata 
+SET smart_boundary = TRUE, boundary_days = 7 
+WHERE frequency = 'quarterly';
+
+UPDATE ingestion_metadata 
+SET smart_boundary = TRUE, boundary_days = 14 
+WHERE frequency = 'annual';
+
+-- Enable S&P 500 tracking for data scripts
+UPDATE ingestion_metadata 
+SET sp500_tracked = TRUE 
+WHERE script_name IN (
+    'fetch_prices.py', 'fetch_historical_market_cap.py', 'fetch_metrics.py',
+    'fetch_profile.py', 'fetch_analyst_labels.py', 'fetch_analyst_estimates.py',
+    'fetch_historical_analyst.py', 'fetch_stock_news.py'
+);

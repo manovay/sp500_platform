@@ -60,15 +60,27 @@ def get_meta_info():
         return meta_info
 
 def should_run_script(frequency, last_run_date):
+    """Simple scheduling - you can add smart scheduling later"""
     if last_run_date is None:
         return True
-    freq_days = FREQUENCY_TO_DAYS.get(frequency, 1)
+    
     try:
         last_run = last_run_date if isinstance(last_run_date, date) else datetime.strptime(str(last_run_date), "%Y-%m-%d").date()
     except Exception:
         last_run = date.today() - timedelta(days=365*3)
+    
     days_since = (date.today() - last_run).days
-    return days_since >= freq_days
+    
+    if frequency == "daily":
+        return days_since >= 1
+    elif frequency == "weekly":
+        return days_since >= 7
+    elif frequency == "quarterly":
+        return days_since >= 90
+    elif frequency == "annual":
+        return days_since >= 365
+    else:
+        return days_since >= 1
 
 def update_last_run_date(script):
     with engine.connect() as conn:
@@ -80,7 +92,9 @@ def update_last_run_date(script):
 
 def main():
     print(f"\n[{datetime.now().isoformat()}] 🚀 Starting the scheduled data fetching pipeline...\n")
+    
     meta_info = get_meta_info()
+    failed_orders = []
     
     # Run all the data fetching scripts first
     for script, _ in FETCH_MODULES[:-1]:  # Exclude run_trades for now
@@ -105,13 +119,25 @@ def main():
     try:
         print(f"\n[{datetime.now().isoformat()}] --- Running run_trades.py (always runs after data fetch) ---")
         module = importlib.import_module("run_trades")
-        module.fetch()  # or module.main()
+        failed_orders = module.fetch()  # Capture failed orders
         print(f"[{datetime.now().isoformat()}] --- run_trades.py finished ---")
     except Exception as e:
         print(f"[{datetime.now().isoformat()}] ❌ Error running run_trades: {e}")
     
     print(f"\n[{datetime.now().isoformat()}] --- Pipeline Execution Summary ---")
-    print(f"[{datetime.now().isoformat()}] 🎉 All due fetch modules executed (or stopped on error).\n")
+    print(f"[{datetime.now().isoformat()}] 🎉 All due fetch modules executed (or stopped on error).")
+    
+    # Display failed orders if any
+    if failed_orders:
+        print(f"\n[{datetime.now().isoformat()}] ❌ FAILED ORDERS SUMMARY:")
+        print(f"[{datetime.now().isoformat()}] Total failed orders: {len(failed_orders)}")
+        for i, order in enumerate(failed_orders, 1):
+            print(f"[{datetime.now().isoformat()}] {i}. {order['symbol']} {order['side'].upper()} ${order['notional']:.2f} - Error: {order['error']}")
+        print(f"\n[{datetime.now().isoformat()}] ⚠️  Please review and manually handle these failed orders.")
+    else:
+        print(f"[{datetime.now().isoformat()}] ✅ No failed orders to report.")
+    
+    print()
 
 if __name__ == "__main__":
     main()

@@ -4,8 +4,6 @@ import pandas as pd
 from dotenv import load_dotenv
 from sqlalchemy import create_engine, text
 from pathlib import Path
-import importlib
-from datetime import date, timedelta, datetime
 
 def drop_all_tables():
     """Drop all tables to start fresh"""
@@ -47,7 +45,7 @@ def init_database():
     engine = create_engine(database_url)
     
     # Read and execute schema.sql
-    schema_path = Path(__file__).parent / 'schema.sql'
+    schema_path = Path(__file__).parent.parent / 'schema.sql'
     with open(schema_path, 'r', encoding='utf-8') as f:
         schema_sql = f.read()
     
@@ -109,7 +107,7 @@ def upload_current_data():
     
     print("📥 Uploading current CSV data...")
     for csv, table in csv_table_map.items():
-        csv_path = f"ingestion/csvs/{csv}"
+        csv_path = f"../../csvs/{csv}"
         if os.path.exists(csv_path):
             print(f"  Uploading {csv} to {table}...")
             upload_csv_to_table(csv_path, table, conn)
@@ -119,95 +117,10 @@ def upload_current_data():
     conn.close()
     print("✅ Current data upload complete")
 
-def run_all_fetch_scripts():
-    """Run the fetch scripts to update data"""
-    print("🔄 Running fetch scripts to update data...")
-    
-    # Import and run the same logic as run_all_fetch_scripts.py
-    FETCH_MODULES = [
-        ("fetch_tickers", "tickers"),
-        ("fetch_prices", "prices"),
-        ("fetch_historical_market_cap", "allocations"),
-        ("fetch_metrics", "key_metrics"),
-        ("fetch_profile", "profiles"),
-        ("fetch_analyst_labels", "analyst_labels"),
-        ("fetch_analyst_estimates", "analyst_estimates"),
-        ("fetch_historical_analyst", "grades_historical"),
-        ("fetch_stock_news", "stock_news")
-    ]
-    
-    FREQUENCY_TO_DAYS = {
-        "daily": 1,
-        "weekly": 7,
-        "quarterly": 90,
-        "annual": 365,
-        "manual": 0,
-    }
-    
-    engine = create_engine(os.getenv('DATABASE_URL'))
-    
-    def get_meta_info():
-        with engine.connect() as conn:
-            meta_info = {}
-            for script, table in FETCH_MODULES:
-                result = conn.execute(text("""
-                    SELECT frequency, last_run_date
-                    FROM ingestion_metadata
-                    WHERE script_name = :script
-                """), {"script": f"{script}.py"})
-                row = result.fetchone()
-                if row:
-                    meta_info[script] = {
-                        "frequency": row[0],
-                        "last_run_date": row[1]
-                    }
-                else:
-                    meta_info[script] = {
-                        "frequency": "manual",
-                        "last_run_date": (date.today() - timedelta(days=365*3)).isoformat()
-                    }
-            return meta_info
-    
-    def should_run_script(frequency, last_run_date):
-        if last_run_date is None:
-            return True
-        freq_days = FREQUENCY_TO_DAYS.get(frequency, 1)
-        try:
-            last_run = last_run_date if isinstance(last_run_date, date) else datetime.strptime(str(last_run_date), "%Y-%m-%d").date()
-        except Exception:
-            last_run = date.today() - timedelta(days=365*3)
-        days_since = (date.today() - last_run).days
-        return days_since >= freq_days
-    
-    def update_last_run_date(script):
-        with engine.connect() as conn:
-            conn.execute(
-                text("UPDATE ingestion_metadata SET last_run_date = :today WHERE script_name = :script"),
-                {"today": date.today().isoformat(), "script": f"{script}.py"}
-            )
-            conn.commit()
-    
-    meta_info = get_meta_info()
-    for script, _ in FETCH_MODULES:
-        freq = meta_info[script]["frequency"]
-        last_run = meta_info[script]["last_run_date"]
-        if should_run_script(freq, last_run):
-            try:
-                print(f"\n[{datetime.now().isoformat()}] --- Running {script}.py (frequency: {freq}, last_run_date: {last_run}) ---")
-                module = importlib.import_module(f"ingestion.{script}")
-                from_date = last_run if last_run else (date.today() - timedelta(days=365*3)).isoformat()
-                print(f"[{datetime.now().isoformat()}] Calling fetch(from_date={from_date}) for {script}...")
-                module.fetch(from_date)
-                update_last_run_date(script)
-                print(f"[{datetime.now().isoformat()}] --- {script}.py finished successfully and last_run_date updated ---")
-            except Exception as e:
-                print(f"[{datetime.now().isoformat()}] ❌ Error running {script}: {e}")
-                break
-        else:
-            print(f"[{datetime.now().isoformat()}] ⏩ Skipping {script}.py (frequency: {freq}, last_run_date: {last_run}) - Not due yet.")
+
 
 def main():
-    """Main function: Delete DB, upload current data, then update"""
+    """Main function: Delete DB and upload current data"""
     print("🚀 Starting complete database refresh process...")
     
     # Step A: Delete current database
@@ -216,9 +129,6 @@ def main():
     # Step B: Upload current data
     init_database()
     upload_current_data()
-    
-    # Step C: Update using run_all logic
-    run_all_fetch_scripts()
     
     print("\n🎉 Complete database refresh process finished!")
 

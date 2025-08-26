@@ -21,33 +21,34 @@ load_dotenv(override=True)
 ALPACA_API_KEY = os.getenv("ALPACA_KEY")
 ALPACA_SECRET_KEY = os.getenv("ALPACA_SECRET")
 
+#Sanity Check for Alpaca Clie, KEYS
 if not ALPACA_API_KEY or not ALPACA_SECRET_KEY:
-    print("WARNING: ALPACA_KEY or ALPACA_SECRET not found in environment variables!")
-    print("Portfolio endpoints will return configuration errors.")
+    print("WARNING: ALPACA_KEY or ALPACA_SECRET not initalized in environment variables")
     trading_client = None
 else:
     try:
         trading_client = TradingClient(ALPACA_API_KEY, ALPACA_SECRET_KEY, paper=True)
-        print("✅ Alpaca client initialized successfully")
+        print("Alpaca client initialized successfully")
     except Exception as e:
-        print(f"❌ Error initializing Alpaca client: {e}")
+        print(f"Error initializing Alpaca client: {e}")
         trading_client = None
 
+#Flask Setup 
 app = Flask(__name__)
 CORS(app, origins=[os.getenv("FRONTEND_ORIGIN", "http://localhost:5173")])
 
 # Database setup
 DATABASE_URL = os.getenv("DATABASE_URL")
 if not DATABASE_URL:
-    print("WARNING: DATABASE_URL is not set! Stock analysis endpoints will not work.")
+    print("DATABASE_URL is not found in environment variables")
     engine = None
 else:
     engine = create_engine(DATABASE_URL)
 
+
 # ============================================================================
 # HELPER FUNCTIONS
 # ============================================================================
-
 def check_database_configured():
     """Check if database is configured and return error response if not"""
     if not engine:
@@ -66,12 +67,88 @@ def check_alpaca_configured():
         }), 500
     return None
 
-def calculate_volatility_and_volume(prices, ticker, period_name):
-    """Calculate volatility and average volume for a given price dataset"""
-    volatility = 0
-    avg_vol = 0
+def get_full_data_for_ticker_llm(conn, ticker):
+    """
+    Helper to fetch and build the full_data dict for a given ticker, using current date - 7 days for snapshot.
+    This function matches the structure from fetch_weekly_llm.py
+    """
+    today = date.today()
+    snapshot_date = today - timedelta(days=7)  # Use current date - 7 days for snapshot
+    week_ago = today - timedelta(days=7)
+    year_ago = today - timedelta(days=365)
+
+    # Get snapshot date (use snapshot_date instead of latest allocation_date)
+    snapshot = snapshot_date.isoformat()
+
+    # Previous ACTUAL allocation pct (from actual_portfolio_allocations table)
+    prev_actual_row = conn.execute(text("""
+        SELECT actual_allocation_pct FROM actual_portfolio_allocations 
+        WHERE ticker = :ticker AND allocation_date < :week_ago 
+        ORDER BY allocation_date DESC LIMIT 1
+    """), {"ticker": ticker, "week_ago": week_ago}).mappings().fetchone()
     
-    if prices and len(prices) > 1:
+    # Fallback to FMP allocations if no actual data exists
+    if not prev_actual_row:
+        prev_alloc_row = conn.execute(text("""
+            SELECT allocation_pct FROM allocations WHERE ticker = :ticker AND allocation_date < :week_ago ORDER BY allocation_date DESC LIMIT 1
+        """), {"ticker": ticker, "week_ago": week_ago}).mappings().fetchone()
+        previous_allocation_pct = float(prev_alloc_row["allocation_pct"]) if prev_alloc_row else None
+    else:
+        previous_allocation_pct = float(prev_actual_row["actual_allocation_pct"])
+
+    # Profile summary (from profiles)
+    profile_row = conn.execute(text("""
+        SELECT profile_data FROM profiles WHERE ticker = :ticker AND date_fetched >= :week_ago ORDER BY date_fetched DESC LIMIT 1
+    """), {"ticker": ticker, "week_ago": week_ago}).fetchone()
+    profile_summary = profile_row[0] if profile_row else None
+
+    # Weekly: grades_historical, allocations, predictions (last 7 days)
+    weekly = {}
+    weekly["grades_historical"] = [dict(row) for row in conn.execute(text("""
+        SELECT * FROM grades_historical WHERE symbol = :ticker AND rating_date >= :week_ago ORDER BY rating_date DESC
+    """), {"ticker": ticker, "week_ago": week_ago}).mappings()]
+    weekly["allocations"] = [dict(row) for row in conn.execute(text("""
+        SELECT * FROM allocations WHERE ticker = :ticker AND allocation_date >= :week_ago ORDER BY allocation_date DESC
+    """), {"ticker": ticker, "week_ago": week_ago}).mappings()]
+    weekly["predictions"] = [dict(row) for row in conn.execute(text("""
+        SELECT * FROM weekly_llm_data WHERE ticker = :ticker AND created_at >= :week_ago ORDER BY created_at DESC
+    """), {"ticker": ticker, "week_ago": week_ago}).mappings()]
+
+    # Daily: prices, analyst_labels, stock_news (last 7 days)
+    daily = {}
+    daily["prices"] = [dict(row) for row in conn.execute(text("""
+        SELECT * FROM prices WHERE ticker = :ticker AND price_date >= :week_ago ORDER BY price_date DESC
+    """), {"ticker": ticker, "week_ago": week_ago}).mappings()]
+    daily["analyst_labels"] = [dict(row) for row in conn.execute(text("""
+        SELECT * FROM analyst_labels WHERE ticker = :ticker AND label_date >= :week_ago ORDER BY label_date DESC
+    """), {"ticker": ticker, "week_ago": week_ago}).mappings()]
+    daily["stock_news"] = [dict(row) for row in conn.execute(text("""
+        SELECT * FROM stock_news WHERE symbol = :ticker AND published_date >= :week_ago ORDER BY published_date DESC
+    """), {"ticker": ticker, "week_ago": week_ago}).mappings()]
+
+    # Quarterly: tickers, analyst_estimates (last 4 quarters)
+    quarterly = {}
+    quarterly["tickers"] = [dict(row) for row in conn.execute(text("""
+        SELECT * FROM tickers WHERE ticker = :ticker
+    """), {"ticker": ticker}).mappings()]
+    quarterly["analyst_estimates"] = [dict(row) for row in conn.execute(text("""
+        SELECT * FROM analyst_estimates WHERE symbol = :ticker AND report_date >= :year_ago ORDER BY report_date DESC
+    """), {"ticker": ticker, "year_ago": year_ago}).mappings()]
+
+    # Annual: key_metrics, profiles (last 1 year)
+    annual = {}
+    annual["key_metrics"] = [dict(row) for row in conn.execute(text("""
+        SELECT * FROM key_metrics WHERE ticker = :ticker AND date >= :year_ago ORDER BY date DESC
+    """), {"ticker": ticker, "year_ago": year_ago}).mappings()]
+    annual["profiles"] = [dict(row) for row in conn.execute(text("""
+        SELECT * FROM profiles WHERE ticker = :ticker AND date_fetched >= :year_ago ORDER BY date_fetched DESC
+    """), {"ticker": ticker, "year_ago": year_ago}).mappings()]
+
+    # Calculate weekly volatility and average volume
+    weekly_volatility = 0
+    weekly_avg_vol = 0
+    if daily["prices"] and len(daily["prices"]) > 1:
+        prices = daily["prices"]
         # Calculate price volatility (standard deviation of returns)
         returns = []
         for i in range(1, len(prices)):
@@ -83,17 +160,174 @@ def calculate_volatility_and_volume(prices, ticker, period_name):
         # Only calculate volatility if we have at least 2 returns
         if len(returns) >= 2:
             try:
+                weekly_volatility = statistics.stdev(returns) * 100  # Convert to percentage
+            except Exception as e:
+                print(f"Warning: Could not calculate weekly volatility for {ticker}: {e}")
+                weekly_volatility = 0
+        
+        # Calculate average volume
+        volumes = [float(price.get('volume', 0)) for price in prices if price.get('volume')]
+        if volumes:
+            weekly_avg_vol = sum(volumes) / len(volumes)
+
+    # Yearly return pct (from prices, 1 year ago vs now)
+    price_now_row = conn.execute(text("""
+        SELECT close_price FROM prices WHERE ticker = :ticker ORDER BY price_date DESC LIMIT 1
+    """), {"ticker": ticker}).mappings().fetchone()
+    price_year_ago_row = conn.execute(text("""
+        SELECT close_price FROM prices WHERE ticker = :ticker AND price_date <= :year_ago ORDER BY price_date DESC LIMIT 1
+    """), {"ticker": ticker, "year_ago": year_ago}).mappings().fetchone()
+    yearly_return_pct = None
+    if price_now_row and price_year_ago_row and price_year_ago_row["close_price"]:
+        yearly_return_pct = 100.0 * (float(price_now_row["close_price"]) - float(price_year_ago_row["close_price"])) / float(price_year_ago_row["close_price"])
+
+    # Key metrics (latest)
+    key_metrics = conn.execute(text("""
+        SELECT * FROM key_metrics WHERE ticker = :ticker ORDER BY date DESC LIMIT 1
+    """), {"ticker": ticker}).mappings().fetchone()
+
+    return {
+        "ticker": ticker,
+        "snapshot": snapshot,
+        "previous_allocation_pct": previous_allocation_pct,
+        "profile_summary": profile_summary,
+        "weekly": weekly,
+        "daily": daily,
+        "quarterly": quarterly,
+        "annual": annual,
+        "yearly_return_pct": yearly_return_pct,
+        "key_metrics": dict(key_metrics) if key_metrics else {},
+        "weekly_volatility": weekly_volatility,
+        "weekly_avg_vol": weekly_avg_vol
+    }
+
+def calculate_volatility_and_volume(prices, ticker, period_name): 
+    """Calculate volatility and average volume for a given price dataset.
+    Takes in a list of prices, ticker symbol and period name"""
+    volatility = 0
+    avg_vol = 0
+    
+    if prices and len(prices) > 1:
+        # Calculate price volatility (standard deviation of returns)
+        returns = []
+        for i in range(1, len(prices)):
+            prev_price = float(prices[i-1].get('close_price', 0)) #i-1 gives access to prev price 
+            curr_price = float(prices[i].get('close_price', 0)) # current price
+            if prev_price > 0: #prev price cant be 0 
+                returns.append((curr_price - prev_price) / prev_price) # Difference in pct between prev and curr 
+        
+        # Only calculate volatility if we have at least 2 returns
+        if len(returns) >= 2:
+            try:
                 volatility = statistics.stdev(returns) * 100  # Convert to percentage
             except Exception as e:
                 print(f"Warning: Could not calculate {period_name} volatility for {ticker}: {e}")
                 volatility = 0
         
-        # Calculate average volume
+        # Calculate average volume by grabing volumes array for every price and averaging
+        
         volumes = [float(price.get('volume', 0)) for price in prices if price.get('volume')]
+        
         if volumes:
             avg_vol = sum(volumes) / len(volumes)
     
     return volatility, avg_vol
+
+#Classic prompt creation
+def create_prompt_for_ticker(full_data):
+    """
+    Create a prompt for the LLM based on the ticker data in the required format
+    (Same as fetch_weekly_llm.py)
+    """
+    ticker = full_data['ticker']
+    snapshot = full_data['snapshot']
+    profile = full_data['profile_summary']
+    latest_price = full_data['daily']['prices'][0] if full_data['daily']['prices'] else None
+    latest_news = full_data['daily']['stock_news'][:2] if full_data['daily']['stock_news'] else []
+    latest_estimates = full_data['quarterly']['analyst_estimates'][:1] if full_data['quarterly']['analyst_estimates'] else []
+    previous_allocation = full_data['previous_allocation_pct']
+    yearly_return = full_data['yearly_return_pct']
+    
+    # Multiply allocation percentages by 100 for the model (S = 100)
+    S = 100
+    scaled_previous_allocation = previous_allocation * S if previous_allocation else 0
+    
+    # Extract news headlines (limit to 2 headlines, max 100 chars each)
+    news_headlines = []
+    for news in latest_news[:2]:
+        title = news.get('title', '')
+        if title:
+            truncated_title = title[:100] + "..." if len(title) > 100 else title
+            news_headlines.append(truncated_title)
+    
+    # Extract first sentence from profile description
+    profile_summary = "No profile data available"
+    if profile and isinstance(profile, dict) and 'description' in profile:
+        description = profile['description']
+        if description:
+            # Find the first sentence (ends with . ! or ?)
+            first_sentence_end = -1
+            for char in ['.', '!', '?']:
+                pos = description.find(char)
+                if pos != -1 and (first_sentence_end == -1 or pos < first_sentence_end):
+                    first_sentence_end = pos
+            
+            if first_sentence_end != -1:
+                profile_summary = description[:first_sentence_end + 1].strip()
+            else:
+                # If no sentence ending found, take first 150 characters
+                profile_summary = description[:150].strip()
+    
+    # Simplified data object to reduce prompt length
+    data_obj = {
+        "ticker": ticker,
+        "snapshot": snapshot,
+        "previous_allocation_pct": scaled_previous_allocation,
+        "profile_summary": profile_summary,
+        "latest_price": latest_price.get('close_price', 'N/A') if latest_price else 'N/A',
+        "yearly_return_pct": yearly_return if yearly_return else 0,
+        "weekly_volatility": full_data.get('weekly_volatility', 0),
+        "weekly_avg_vol": full_data.get('weekly_avg_vol', 0),
+        "recent_news_count": len(latest_news),
+        "recent_news_headlines": news_headlines,
+        "key_metrics": {
+            "pe_ratio": full_data.get('key_metrics', {}).get('metrics', {}).get('peRatio', 'N/A'),
+            "market_cap": full_data.get('key_metrics', {}).get('metrics', {}).get('marketCap', 'N/A'),
+            "debt_to_equity": full_data.get('key_metrics', {}).get('metrics', {}).get('debtToEquity', 'N/A')
+        }
+    }
+    
+    # Convert the data object to JSON string
+    data_json = json.dumps(data_obj)
+    
+    prompt = f"""<s>[INST] <<SYS>>
+You are a portfolio optimization assistant.
+
+For a given stock snapshot, recommend how the allocation should be adjusted.
+Your response MUST be valid JSON matching this schema:
+{{
+  "ticker": "<string>",
+  "snapshot": "<YYYY-MM-DD>",
+  "verdict": "<Increase|Decrease|Hold|Add|Remove>",
+  "new_alloc_pct": <number>,
+  "reasoning": "<short explanation>"
+}}
+
+IMPORTANT: Allocation percentages are scaled by 100 (S=100). 
+- Input previous_allocation_pct is in basis points (1.00 = 100 basis points = 1%)
+- Output new_alloc_pct should also be in basis points (e.g., 150 = 1.5%, 250 = 2.5%)
+- This scaling helps the model work with more precise decimal values
+
+Do not include any extra keys or commentary. At the end, emit only the JSON.
+
+<</SYS>>
+
+DATA:
+{data_json}
+
+Please produce the JSON response.[/INST]"""
+    
+    return prompt
 
 # ============================================================================
 # STOCK ANALYSIS ENDPOINTS (Used by Stepper components)
@@ -110,7 +344,8 @@ def api_stocks():
         result = conn.execute(text("""
             SELECT ticker, company_name, sector FROM tickers ORDER BY ticker
         """))
-        stocks = [dict(row) for row in result.mappings()]
+        #Creates a dict of all tickers, company names, and sectors 
+        stocks = [dict(row) for row in result.mappings()] 
         return jsonify({"status": "ok", "stocks": stocks})
 
 @app.route("/api/stocks/<ticker>/info", methods=["GET"])
@@ -129,12 +364,13 @@ def api_stock_info(ticker):
         """), {"ticker": ticker}).fetchone()
         info = dict(ticker_row) if ticker_row else {}
         if profile_row:
-            info["profile"] = profile_row[0]
+            info["profile"] = profile_row[0] # only one profile entry 
         return jsonify({"status": "ok", "info": info})
 
-@app.route("/api/stocks/<ticker>/full-data", methods=["GET"])
-def api_stock_full_data(ticker):
-    """Return comprehensive data for a ticker (used by Step3_PromptReview)"""
+#Builds prompt 
+@app.route("/api/stocks/<ticker>/prompt", methods=["GET"])
+def api_stock_prompt(ticker):
+    """Return the LLM prompt for a ticker (used by Step3_PromptReview)"""
     error_response = check_database_configured()
     if error_response:
         return error_response
@@ -148,38 +384,20 @@ def api_stock_full_data(ticker):
         if not ticker_row:
             return jsonify({"status": "error", "error": "Ticker not found"}), 404
         
-        # Get latest prices
-        prices_row = conn.execute(text("""
-            SELECT price_date, open_price, high_price, low_price, close_price, volume
-            FROM prices WHERE ticker = :ticker ORDER BY price_date DESC LIMIT 1
-        """), {"ticker": ticker}).mappings().fetchone()
+        # Use the helper function to get full data (same as fetch_weekly_llm.py)
+        full_data = get_full_data_for_ticker_llm(conn, ticker)
         
-        # Get latest analyst data
-        analyst_row = conn.execute(text("""
-            SELECT * FROM analyst_labels WHERE ticker = :ticker ORDER BY label_date DESC LIMIT 1
-        """), {"ticker": ticker}).mappings().fetchone()
+        # Create the prompt using the same function as fetch_weekly_llm.py
+        prompt = create_prompt_for_ticker(full_data)
         
-        # Get latest key metrics
-        metrics_row = conn.execute(text("""
-            SELECT metrics FROM key_metrics WHERE ticker = :ticker ORDER BY date DESC LIMIT 1
-        """), {"ticker": ticker}).fetchone()
-        
-        # Get latest news
-        news_rows = conn.execute(text("""
-            SELECT * FROM stock_news WHERE symbol = :ticker ORDER BY published_date DESC LIMIT 5
-        """), {"ticker": ticker}).mappings().fetchall()
-        
-        full_data = {
-            "ticker": ticker,
-            "company_name": ticker_row["company_name"],
-            "sector": ticker_row["sector"],
-            "latest_price": dict(prices_row) if prices_row else None,
-            "analyst_data": dict(analyst_row) if analyst_row else None,
-            "key_metrics": metrics_row[0] if metrics_row else None,
-            "recent_news": [dict(row) for row in news_rows] if news_rows else []
-        }
-        
-        return jsonify({"status": "ok", "data": full_data})
+        return jsonify({
+            "status": "ok", 
+            "data": {
+                "ticker": ticker,
+                "prompt": prompt,
+                "full_data": full_data
+            }
+        })
 
 # ============================================================================
 # PORTFOLIO MANAGEMENT ENDPOINTS (Used by Portfolio components)
@@ -515,7 +733,7 @@ def api_cancel_all_orders():
 # Load LLM environment variables
 LLM_KEY = os.getenv("LLM_KEY")
 if not LLM_KEY:
-    print("WARNING: LLM_KEY not found in environment variables!")
+    print("LLM_KEY not found in environment variables!")
 
 # Custom JSON encoder to handle date and decimal objects
 class DateEncoder(json.JSONEncoder):
@@ -525,243 +743,6 @@ class DateEncoder(json.JSONEncoder):
         elif hasattr(obj, '__float__'):  # Handle Decimal, Fraction, etc.
             return float(obj)
         return super().default(obj)
-
-def get_full_data_for_ticker_llm(conn, ticker):
-    """
-    Helper to fetch and build the full_data dict for a given ticker, using current date - 7 days for snapshot.
-    Based on fetch_weekly_llm.py
-    """
-    today = date.today()
-    snapshot_date = today - timedelta(days=7)  # Use current date - 7 days for snapshot
-    week_ago = today - timedelta(days=7)
-    year_ago = today - timedelta(days=365)
-
-    # Get snapshot date (use snapshot_date instead of latest allocation_date)
-    snapshot = snapshot_date.isoformat()
-
-    # Previous ACTUAL allocation pct (from actual_portfolio_allocations table)
-    prev_actual_row = conn.execute(text("""
-        SELECT actual_allocation_pct FROM actual_portfolio_allocations 
-        WHERE ticker = :ticker AND allocation_date < :week_ago 
-        ORDER BY allocation_date DESC LIMIT 1
-    """), {"ticker": ticker, "week_ago": week_ago}).mappings().fetchone()
-    
-    # Fallback to FMP allocations if no actual data exists
-    if not prev_actual_row:
-        prev_alloc_row = conn.execute(text("""
-            SELECT allocation_pct FROM allocations WHERE ticker = :ticker AND allocation_date < :week_ago ORDER BY allocation_date DESC LIMIT 1
-        """), {"ticker": ticker, "week_ago": week_ago}).mappings().fetchone()
-        previous_allocation_pct = float(prev_alloc_row["allocation_pct"]) if prev_alloc_row else None
-    else:
-        previous_allocation_pct = float(prev_actual_row["actual_allocation_pct"])
-
-    # Profile summary (from profiles)
-    profile_row = conn.execute(text("""
-        SELECT profile_data FROM profiles WHERE ticker = :ticker AND date_fetched >= :week_ago ORDER BY date_fetched DESC LIMIT 1
-    """), {"ticker": ticker, "week_ago": week_ago}).fetchone()
-    profile_summary = profile_row[0] if profile_row else None
-
-    # Weekly: grades_historical, allocations, predictions (last 7 days)
-    weekly = {}
-    weekly["grades_historical"] = [dict(row) for row in conn.execute(text("""
-        SELECT * FROM grades_historical WHERE symbol = :ticker AND rating_date >= :week_ago ORDER BY rating_date DESC
-    """), {"ticker": ticker, "week_ago": week_ago}).mappings()]
-    weekly["allocations"] = [dict(row) for row in conn.execute(text("""
-        SELECT * FROM allocations WHERE ticker = :ticker AND allocation_date >= :week_ago ORDER BY allocation_date DESC
-    """), {"ticker": ticker, "week_ago": week_ago}).mappings()]
-    weekly["predictions"] = [dict(row) for row in conn.execute(text("""
-        SELECT * FROM weekly_llm_data WHERE ticker = :ticker AND created_at >= :week_ago ORDER BY created_at DESC
-    """), {"ticker": ticker, "week_ago": week_ago}).mappings()]
-
-    # Daily: prices, analyst_labels, stock_news (last 7 days)
-    daily = {}
-    daily["prices"] = [dict(row) for row in conn.execute(text("""
-        SELECT * FROM prices WHERE ticker = :ticker AND price_date >= :week_ago ORDER BY price_date DESC
-    """), {"ticker": ticker, "week_ago": week_ago}).mappings()]
-    daily["analyst_labels"] = [dict(row) for row in conn.execute(text("""
-        SELECT * FROM analyst_labels WHERE ticker = :ticker AND label_date >= :week_ago ORDER BY label_date DESC
-    """), {"ticker": ticker, "week_ago": week_ago}).mappings()]
-    daily["stock_news"] = [dict(row) for row in conn.execute(text("""
-        SELECT * FROM stock_news WHERE symbol = :ticker AND published_date >= :week_ago ORDER BY published_date DESC
-    """), {"ticker": ticker, "week_ago": week_ago}).mappings()]
-
-    # Quarterly: tickers, analyst_estimates (last 4 quarters)
-    quarterly = {}
-    quarterly["tickers"] = [dict(row) for row in conn.execute(text("""
-        SELECT * FROM tickers WHERE ticker = :ticker
-    """), {"ticker": ticker}).mappings()]
-    quarterly["analyst_estimates"] = [dict(row) for row in conn.execute(text("""
-        SELECT * FROM analyst_estimates WHERE symbol = :ticker AND report_date >= :year_ago ORDER BY report_date DESC
-    """), {"ticker": ticker, "year_ago": year_ago}).mappings()]
-
-    # Annual: key_metrics, profiles (last 1 year)
-    annual = {}
-    annual["key_metrics"] = [dict(row) for row in conn.execute(text("""
-        SELECT * FROM key_metrics WHERE ticker = :ticker AND date >= :year_ago ORDER BY date DESC
-    """), {"ticker": ticker, "year_ago": year_ago}).mappings()]
-    annual["profiles"] = [dict(row) for row in conn.execute(text("""
-        SELECT * FROM profiles WHERE ticker = :ticker AND date_fetched >= :year_ago ORDER BY date_fetched DESC
-    """), {"ticker": ticker, "year_ago": year_ago}).mappings()]
-
-    # Calculate weekly volatility and average volume
-    weekly_volatility, weekly_avg_vol = calculate_volatility_and_volume(daily["prices"], ticker, "weekly")
-
-    # Calculate quarterly volatility and average volume
-    quarterly_prices = [dict(row) for row in conn.execute(text("""
-        SELECT * FROM prices WHERE ticker = :ticker AND price_date >= :year_ago ORDER BY price_date DESC
-    """), {"ticker": ticker, "year_ago": year_ago}).mappings()]
-    
-    quarterly_volatility, quarterly_avg_vol = calculate_volatility_and_volume(quarterly_prices, ticker, "quarterly")
-
-    # Yearly return pct (from prices, 1 year ago vs now)
-    price_now_row = conn.execute(text("""
-        SELECT close_price FROM prices WHERE ticker = :ticker ORDER BY price_date DESC LIMIT 1
-    """), {"ticker": ticker}).mappings().fetchone()
-    price_year_ago_row = conn.execute(text("""
-        SELECT close_price FROM prices WHERE ticker = :ticker AND price_date <= :year_ago ORDER BY price_date DESC LIMIT 1
-    """), {"ticker": ticker, "year_ago": year_ago}).mappings().fetchone()
-    yearly_return_pct = None
-    if price_now_row and price_year_ago_row and price_year_ago_row["close_price"]:
-        yearly_return_pct = 100.0 * (float(price_now_row["close_price"]) - float(price_year_ago_row["close_price"])) / float(price_year_ago_row["close_price"])
-
-    # Latest label
-    latest_label = conn.execute(text("""
-        SELECT * FROM analyst_labels WHERE ticker = :ticker ORDER BY label_date DESC LIMIT 1
-    """), {"ticker": ticker}).mappings().fetchone()
-
-    # Latest estimate
-    latest_est = conn.execute(text("""
-        SELECT * FROM analyst_estimates WHERE symbol = :ticker ORDER BY report_date DESC LIMIT 1
-    """), {"ticker": ticker}).mappings().fetchone()
-
-    # Grades summary (latest grades_historical)
-    grades_summary = conn.execute(text("""
-        SELECT * FROM grades_historical WHERE symbol = :ticker ORDER BY rating_date DESC LIMIT 1
-    """), {"ticker": ticker}).mappings().fetchone()
-
-    # Key metrics (latest)
-    key_metrics = conn.execute(text("""
-        SELECT * FROM key_metrics WHERE ticker = :ticker ORDER BY date DESC LIMIT 1
-    """), {"ticker": ticker}).mappings().fetchone()
-
-    # News: last 7 days
-    news = [dict(row) for row in conn.execute(text("""
-        SELECT * FROM stock_news WHERE symbol = :ticker AND published_date >= :week_ago ORDER BY published_date DESC
-    """), {"ticker": ticker, "week_ago": week_ago}).mappings()]
-
-    return {
-        "ticker": ticker,
-        "snapshot": snapshot,
-        "previous_allocation_pct": previous_allocation_pct,
-        "profile_summary": profile_summary,
-        "weekly": weekly,
-        "daily": daily,
-        "quarterly": quarterly,
-        "annual": annual,
-        "yearly_return_pct": yearly_return_pct,
-        "latest_label": dict(latest_label) if latest_label else None,
-        "latest_est": dict(latest_est) if latest_est else None,
-        "grades_summary": dict(grades_summary) if grades_summary else None,
-        "key_metrics": dict(key_metrics) if key_metrics else None,
-        "news": news,
-        "weekly_volatility": weekly_volatility,
-        "weekly_avg_vol": weekly_avg_vol,
-        "quarterly_volatility": quarterly_volatility,
-        "quarterly_avg_vol": quarterly_avg_vol
-    }
-
-def create_prompt_for_ticker(full_data):
-    """
-    Create a prompt for the LLM based on the ticker data in the required format
-    """
-    ticker = full_data['ticker']
-    snapshot = full_data['snapshot']
-    profile = full_data['profile_summary']
-    latest_price = full_data['daily']['prices'][0] if full_data['daily']['prices'] else None
-    latest_news = full_data['daily']['stock_news'][:2] if full_data['daily']['stock_news'] else []
-    previous_allocation = full_data['previous_allocation_pct']
-    yearly_return = full_data['yearly_return_pct']
-    
-    # Multiply allocation percentages by 100 for the model (S = 100)
-    S = 100
-    scaled_previous_allocation = previous_allocation * S if previous_allocation else 0
-    
-    # Extract news headlines (limit to 2 headlines, max 100 chars each)
-    news_headlines = []
-    for news in latest_news[:2]:
-        title = news.get('title', '')
-        if title:
-            truncated_title = title[:100] + "..." if len(title) > 100 else title
-            news_headlines.append(truncated_title)
-    
-    # Extract first sentence from profile description
-    profile_summary = "No profile data available"
-    if profile and isinstance(profile, dict) and 'description' in profile:
-        description = profile['description']
-        if description:
-            # Find the first sentence (ends with . ! or ?)
-            first_sentence_end = -1
-            for char in ['.', '!', '?']:
-                pos = description.find(char)
-                if pos != -1 and (first_sentence_end == -1 or pos < first_sentence_end):
-                    first_sentence_end = pos
-            
-            if first_sentence_end != -1:
-                profile_summary = description[:first_sentence_end + 1].strip()
-            else:
-                # If no sentence ending found, take first 150 characters
-                profile_summary = description[:150].strip()
-    
-    # Simplified data object to reduce prompt length
-    data_obj = {
-        "ticker": ticker,
-        "snapshot": snapshot,
-        "previous_allocation_pct": scaled_previous_allocation,
-        "profile_summary": profile_summary,
-        "latest_price": latest_price.get('close_price', 'N/A') if latest_price else 'N/A',
-        "yearly_return_pct": yearly_return if yearly_return else 0,
-        "weekly_volatility": full_data.get('weekly_volatility', 0),
-        "weekly_avg_vol": full_data.get('weekly_avg_vol', 0),
-        "recent_news_count": len(latest_news),
-        "recent_news_headlines": news_headlines,
-        "key_metrics": {
-            "pe_ratio": full_data.get('key_metrics', {}).get('metrics', {}).get('peRatio', 'N/A'),
-            "market_cap": full_data.get('key_metrics', {}).get('metrics', {}).get('marketCap', 'N/A'),
-            "debt_to_equity": full_data.get('key_metrics', {}).get('metrics', {}).get('debtToEquity', 'N/A')
-        }
-    }
-    
-    # Convert the data object to JSON string
-    data_json = json.dumps(data_obj, cls=DateEncoder)
-    
-    prompt = f"""<s>[INST] <<SYS>>
-You are a portfolio optimization assistant.
-
-For a given stock snapshot, recommend how the allocation should be adjusted.
-Your response MUST be valid JSON matching this schema:
-{{
-  "ticker": "<string>",
-  "snapshot": "<YYYY-MM-DD>",
-  "verdict": "<Increase|Decrease|Hold|Add|Remove>",
-  "new_alloc_pct": <number>,
-  "reasoning": "<short explanation>"
-}}
-
-IMPORTANT: Allocation percentages are scaled by 100 (S=100). 
-- Input previous_allocation_pct is in basis points (1.00 = 100 basis points = 1%)
-- Output new_alloc_pct should also be in basis points (e.g., 150 = 1.5%, 250 = 2.5%)
-- This scaling helps the model work with more precise decimal values
-
-Do not include any extra keys or commentary. At the end, emit only the JSON.
-
-<</SYS>>
-
-DATA:
-{data_json}
-
-Please produce the JSON response.[/INST]"""
-
-    return prompt
 
 def call_render_endpoint(prompt):
     """

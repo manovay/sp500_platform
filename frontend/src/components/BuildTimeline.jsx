@@ -7,8 +7,6 @@ const ICONS = {
   API: '🔌',
   EXT: '🌐',
   UI: '🖥️',
-  MODEL: '🤖',
-  TEST: '🧪',
   DEPLOY: '🚀',
 };
 
@@ -40,9 +38,8 @@ const TIMELINE_DATA = {
       id: "data_scraping",
       type: "JOB",
       title: "Financial Modeling Prep API Scraper",
-      summary: "Extracted 3 years of historical S&P 500 data via REST API calls.",
+      summary: "Extracted 3 years of historical S&P 500 data via REST API calls from FMP.",
       tags: ["python", "api", "etl"],
-      links: [{ label: "Scraper Script", href: "SCRAPER_FILE_URL" }],
       meta: { 
         metrics: "Price, volume, market cap, P/E ratio, dividend yield, analyst estimates",
         timeframe: "3 years historical data"
@@ -64,7 +61,7 @@ const TIMELINE_DATA = {
       type: "EXT",
       title: "HuggingFace Fine-tuned Finance LLM",
       summary: "Identified and selected domain-specific language model for financial analysis.",
-      links: [{ label: "HF Model Link", href: "HF_MODEL_URL" }],
+      links: [{ label: "HF Model Link", href: "https://huggingface.co/FinGPT" }],
       meta: { 
         domain: "Finance-specific fine-tuning",
         platform: "HuggingFace model hub"
@@ -74,9 +71,9 @@ const TIMELINE_DATA = {
       id: "prompt_engineering",
       type: "JOB",
       title: "S&P 500 Prompt Generation Engine",
-      summary: "Generated 1500+ structured prompts for comprehensive model evaluation.",
+      summary: "Generated 1500+ prompt-response pairs for comprehensive model evaluation and finetuning data.",
       tags: ["prompting", "automation", "validation"],
-      links: [{ label: "Prompt Script", href: "PROMPT_FILE_URL" }],
+      links: [{ label: "Prompt Script", href: "https://github.com/manovay/sp500_platform/blob/master/prompting-training/FInal-Data-Gen.ipynb" }],
       meta: { 
         volume: "1500+ prompts",
         scope: "Full S&P 500 coverage"
@@ -99,7 +96,7 @@ const TIMELINE_DATA = {
       title: "S&P 500 Domain Validation",
       summary: "Comprehensive testing and fine-tuning to ensure domain expertise.",
       tags: ["testing", "validation", "fine-tuning"],
-      links: [{ label: "Validation Script", href: "VALIDATION_FILE_URL" }],
+      links: [{ label: "Validation Script", href: "https://github.com/manovay/sp500_platform/blob/master/prompting-training/fine-tuning-updated.ipynb" }],
       meta: { 
         focus: "Domain knowledge verification",
         method: "Spot testing and fine-tuning"
@@ -109,7 +106,7 @@ const TIMELINE_DATA = {
       id: "llm_endpoint",
       type: "DEPLOY",
       title: "Render LLM API Endpoint",
-      summary: "Production deployment of fine-tuned model as REST API service.",
+      summary: "Fine-tuned model as a REST API service.",
       tags: ["deployment", "api", "production"],
       meta: { 
         hosting: "Render cloud platform",
@@ -120,7 +117,7 @@ const TIMELINE_DATA = {
       id: "cron_scheduler",
       type: "JOB",
       title: "Weekly Cron Job Scheduler",
-      summary: "Automated weekly execution of LLM inference with updated market data.",
+      summary: "Automated weekly execution, updates market data, querys LLM, places trade orders.",
       tags: ["cron", "automation", "scheduling"],
       meta: { 
         frequency: "Weekly execution",
@@ -131,7 +128,7 @@ const TIMELINE_DATA = {
       id: "alpaca_integration",
       type: "API",
       title: "Alpaca Paper Trading API",
-      summary: "Paper trading account integration for risk-free strategy execution.",
+      summary: "Paper trading account integration for risk-free strategy execution (for time being).",
       tags: ["trading", "paper", "api"],
       links: [{ label: "Trading Script", href: "TRADING_FILE_URL" }],
       meta: { 
@@ -715,14 +712,13 @@ export default function BuildTimeline() {
                 )}
                 {selectedNode.id === "llm_discovery" && (
                   <>
-                    <li>HuggingFace model hub exploration</li>
                     <li>Finance-specific fine-tuned model selection</li>
                     <li>Domain expertise validation criteria</li>
                   </>
                 )}
                 {selectedNode.id === "prompt_engineering" && (
                   <>
-                    <li>Automated prompt generation for S&P 500 stocks</li>
+                    <li>Utilized prompt generation to create synhtetic data for finetuning</li>
                     <li>1500+ structured prompts for comprehensive testing</li>
                     <li>Consistent formatting and validation</li>
                   </>
@@ -743,7 +739,7 @@ export default function BuildTimeline() {
                 )}
                 {selectedNode.id === "llm_endpoint" && (
                   <>
-                    <li>Render cloud deployment configuration</li>
+                    <li>Runpod serverless configuration</li>
                     <li>REST API service architecture</li>
                     <li>Production-ready model serving</li>
                   </>
@@ -752,6 +748,8 @@ export default function BuildTimeline() {
                   <>
                     <li>Automated weekly execution scheduling</li>
                     <li>Updated market data integration</li>
+                    <li>LLM API endpoint query</li>
+                    <li>Alpaca API order placement</li>
                     <li>Error handling and monitoring</li>
                   </>
                 )}
