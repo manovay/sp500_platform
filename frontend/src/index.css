@@ -548,6 +548,12 @@ input::placeholder {
   cursor: pointer;
   padding: var(--space-sm);
   color: var(--text);
+  position: relative;
+  z-index: 1001;
+  width: 44px;
+  height: 44px;
+  align-items: center;
+  justify-content: center;
 }
 
 .hamburger {
@@ -567,6 +573,7 @@ input::placeholder {
   height: 2px;
   background: var(--text);
   transition: all 0.3s ease;
+  left: 0;
 }
 
 .hamburger::before {
@@ -631,6 +638,7 @@ input::placeholder {
     justify-content: space-between;
     align-items: center;
     padding: var(--space-md);
+    position: relative;
   }
   
   .nav-links {
@@ -647,6 +655,7 @@ input::placeholder {
     transform: translateX(-100%);
     transition: transform 0.3s ease;
     z-index: 1000;
+    padding: var(--space-xl);
   }
   
   .nav-links.mobile-open {
@@ -654,8 +663,24 @@ input::placeholder {
   }
   
   .mobile-menu-btn {
-    display: block;
-    z-index: 1001;
+    display: flex;
+  }
+  
+  .nav-links .nav-link {
+    font-size: 1.25rem;
+    padding: var(--space-md) var(--space-lg);
+    min-height: 48px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    text-align: center;
+    border-radius: var(--radius);
+    transition: background-color var(--transition);
+  }
+  
+  .nav-links .nav-link:hover {
+    background-color: var(--surface);
   }
   
   .grid-2,
