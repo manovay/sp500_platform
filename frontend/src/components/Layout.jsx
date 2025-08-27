@@ -1,4 +1,5 @@
-import { Outlet, Link, useLocation, useState } from 'react-router-dom';
+import { Outlet, Link, useLocation } from 'react-router-dom';
+import { useState } from 'react';
 import logo from './oracle zero.png';
 
 export default function Layout() {
