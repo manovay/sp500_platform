@@ -166,15 +166,15 @@ def send_test_email():
     # Send via Resend SDK
     try:
         params = {
-            "from": "S&P 500 Platform <noreply@yourdomain.com>",
-            "to": ["your-email@example.com"],  # Replace with your email
+            "from": "S&P 500 Platform <noreply@oraclezero.manovay.info>",
+            "to": ["manovays2004@gmail.com"],  # Replace with your email
             "subject": f"📊 S&P 500 Platform Test Email - {date.today().isoformat()}",
             "html": email_html
         }
         
         email = resend.Emails.send(params)
         print("✅ Test email sent successfully")
-        print(f"Email ID: {email.id}")
+        print(f"Email ID: {email.get('id', 'N/A')}")
         
     except Exception as e:
         print(f"❌ Error sending email: {str(e)}")

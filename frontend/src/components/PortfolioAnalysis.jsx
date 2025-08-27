@@ -94,11 +94,7 @@ export default function PortfolioAnalysis() {
         </div>
       </div>
 
-      <div className="grid grid-4 mb-xl">
-        <div className="card">
-          <h4 className="text-muted mb-sm">Total Positions</h4>
-          <div className="text-xl font-bold">{portfolioData.summary.total_positions}</div>
-        </div>
+      <div className="grid grid-3 mb-xl">
         <div className="card">
           <h4 className="text-muted mb-sm">FMP Allocation (TOP 10)</h4>
           <div className="text-xl font-bold">{(portfolioData.summary.total_fmp_allocation * 100).toFixed(2)}%</div>

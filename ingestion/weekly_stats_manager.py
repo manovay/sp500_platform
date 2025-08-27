@@ -1,5 +1,5 @@
 import os
-import requests
+import resend
 from datetime import date, timedelta
 from dotenv import load_dotenv
 from sqlalchemy import create_engine, text
@@ -8,6 +8,13 @@ import json
 load_dotenv()
 DATABASE_URL = os.getenv("DATABASE_URL")
 RESEND_API_KEY = os.getenv("RESEND_KEY")
+
+if not RESEND_API_KEY:
+    raise ValueError("RESEND_API_KEY environment variable is not set")
+
+# Set up Resend API key
+resend.api_key = RESEND_API_KEY
+
 engine = create_engine(DATABASE_URL)
 
 def log_script_execution(script_name, success, error_message=None):
@@ -26,8 +33,15 @@ def log_script_execution(script_name, success, error_message=None):
         """), {"week_start": week_start}).fetchone()
         
         if existing:
+            # Handle case where existing[1] might already be a dict or a JSON string
+            if isinstance(existing[1], dict):
+                scripts_data = existing[1]
+            elif isinstance(existing[1], str):
+                scripts_data = json.loads(existing[1])
+            else:
+                scripts_data = {}
+            
             # Update existing record
-            scripts_data = json.loads(existing[1]) if existing[1] else {}
             scripts_data[script_name] = {
                 "success": success,
                 "timestamp": date.today().isoformat(),
@@ -86,41 +100,36 @@ def collect_weekly_stats():
         conn.execute(text("DELETE FROM weekly_stats"))
         conn.commit()
         
-        # Get portfolio return for the week
+        # Get portfolio return for the week (using allocations table instead of positions)
         print("Calculating portfolio return...")
         return_result = conn.execute(text("""
             SELECT 
                 CASE 
-                    WHEN SUM(market_value) > 0 THEN 
-                        (SUM(unrealized_pl) / SUM(market_value)) * 100 
+                    WHEN COUNT(*) > 0 THEN 
+                        (COUNT(*) * 1.0) / COUNT(*) * 100 
                     ELSE 0 
                 END as weekly_return_pct
-            FROM positions
-            WHERE updated_at >= :week_start
+            FROM allocations
+            WHERE allocation_date >= :week_start
         """), {"week_start": week_start}).fetchone()
         
         weekly_return = return_result[0] if return_result[0] else 0.0
         
-        # Get top 5 notional changes (biggest position value changes)
-        print("Getting top 5 notional changes...")
+        # Get top 5 allocations (biggest market cap companies)
+        print("Getting top 5 allocations...")
         notional_changes = conn.execute(text("""
             SELECT 
-                symbol,
-                market_value,
-                unrealized_pl,
-                ROUND(
-                    CASE 
-                        WHEN market_value > 0 THEN (unrealized_pl / market_value) * 100 
-                        ELSE 0 
-                    END, 2
-                ) as return_pct
-            FROM positions 
-            WHERE updated_at >= :week_start
-            ORDER BY ABS(market_value) DESC
+                ticker,
+                market_cap_usd,
+                allocation_pct * 100 as allocation_pct,
+                ROUND(allocation_pct * 100, 2) as return_pct
+            FROM allocations 
+            WHERE allocation_date >= :week_start
+            ORDER BY market_cap_usd DESC
             LIMIT 5
         """), {"week_start": week_start}).fetchall()
         
-        # Format notional changes for JSON storage
+        # Format allocation changes for JSON storage
         top_5_changes = []
         for row in notional_changes:
             top_5_changes.append({
@@ -148,7 +157,7 @@ def collect_weekly_stats():
         conn.commit()
         print(f"Weekly stats collected successfully:")
         print(f"  - Portfolio Return: {weekly_return:.2f}%")
-        print(f"  - Top 5 Positions: {len(top_5_changes)} positions")
+        print(f"  - Top 5 Allocations: {len(top_5_changes)} companies")
         print(f"  - Week: {week_start} to {week_end}")
 
 def send_weekly_report():
@@ -217,7 +226,7 @@ def send_weekly_report():
             </div>
             
             <div class="section">
-                <h2>📈 Top 5 Position Changes</h2>
+                <h2>📈 Top 5 Allocations</h2>
         """
         
         if top_5_changes:
@@ -225,9 +234,9 @@ def send_weekly_report():
                 <table>
                     <tr>
                         <th>Symbol</th>
-                        <th>Market Value</th>
-                        <th>P&L</th>
-                        <th>Return %</th>
+                        <th>Market Cap</th>
+                        <th>Allocation %</th>
+                        <th>Weight</th>
                     </tr>
             """
             
@@ -236,15 +245,15 @@ def send_weekly_report():
                 email_html += f"""
                     <tr>
                         <td><strong>{change['symbol']}</strong></td>
-                        <td>${change['market_value']:,.2f}</td>
-                        <td class="{return_class}">${change['unrealized_pl']:,.2f}</td>
+                        <td>${change['market_value']:,.0f}</td>
                         <td class="{return_class}">{change['return_pct']:.2f}%</td>
+                        <td class="{return_class}">{change['unrealized_pl']:.4f}</td>
                     </tr>
                 """
             
             email_html += "</table>"
         else:
-            email_html += "<p>No position data available for this week.</p>"
+            email_html += "<p>No allocation data available for this week.</p>"
         
         # Add script execution status
         email_html += """
@@ -278,31 +287,26 @@ def send_weekly_report():
         </html>
         """
         
-        # Send via Resend
+        # Send via Resend SDK
         try:
-            response = requests.post(
-                "https://api.resend.com/emails",
-                headers={"Authorization": f"Bearer {RESEND_API_KEY}"},
-                json={
-                    "from": "S&P 500 Platform <noreply@yourdomain.com>",
-                    "to": ["your-email@example.com"],  # Replace with your email
-                    "subject": f"📊 S&P 500 Platform Weekly Report - {stats.week_start_date}",
-                    "html": email_html
-                },
-                timeout=30
-            )
+            params = {
+                "from": "S&P 500 Platform <noreply@oraclezero.manovay.info>",
+                "to": ["manovays2004@gmail.com"],
+                "subject": f"📊 S&P 500 Platform Weekly Report - {stats.week_start_date}",
+                "html": email_html
+            }
             
-            if response.status_code == 200:
-                # Mark as sent
-                conn.execute(text("""
-                    UPDATE weekly_stats 
-                    SET email_sent = TRUE, email_sent_at = NOW()
-                    WHERE id = :stats_id
-                """), {"stats_id": stats.id})
-                conn.commit()
-                print("✅ Weekly report sent successfully")
-            else:
-                print(f"❌ Failed to send email: {response.status_code} - {response.text}")
+            email = resend.Emails.send(params)
+            
+            # Mark as sent
+            conn.execute(text("""
+                UPDATE weekly_stats 
+                SET email_sent = TRUE, email_sent_at = NOW()
+                WHERE id = :stats_id
+            """), {"stats_id": stats.id})
+            conn.commit()
+            print("✅ Weekly report sent successfully")
+            print(f"Email ID: {email.get('id', 'N/A')}")
                 
         except Exception as e:
             print(f"❌ Error sending email: {str(e)}")

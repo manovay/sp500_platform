@@ -11,24 +11,24 @@ const ICONS = {
 };
 
 const NODE_COLORS = {
-  DATA: "#0EA5E9",
-  JOB: "#7C3AED",
-  API: "#4F46E5",
-  EXT: "#059669",
-  UI: "#FFFFFF",
-  MODEL: "#F59E0B",
-  TEST: "#DC2626",
+  DATA: "#8B5CF6",
+  JOB: "#8B5CF6",
+  API: "#8B5CF6",
+  EXT: "#10B981",
+  UI: "#1F2937",
+  MODEL: "#8B5CF6",
+  TEST: "#EF4444",
   DEPLOY: "#10B981",
 };
 
 const NODE_BORDER_COLORS = {
-  DATA: "#0EA5E9",
-  JOB: "#7C3AED",
-  API: "#4F46E5",
-  EXT: "#059669",
-  UI: "#111827",
-  MODEL: "#F59E0B",
-  TEST: "#DC2626",
+  DATA: "#8B5CF6",
+  JOB: "#8B5CF6",
+  API: "#8B5CF6",
+  EXT: "#10B981",
+  UI: "#374151",
+  MODEL: "#8B5CF6",
+  TEST: "#EF4444",
   DEPLOY: "#10B981",
 };
 
@@ -193,19 +193,19 @@ export default function BuildTimeline() {
   };
 
   return (
-    <div style={{ padding: "24px", backgroundColor: "#F9FAFB", minHeight: "100vh" }}>
+    <div style={{ padding: "24px", backgroundColor: "#000000", minHeight: "100vh" }}>
       {/* Header */}
       <div style={{ 
-        backgroundColor: "#FFFFFF", 
+        backgroundColor: "#1F2937", 
         padding: "24px", 
         borderRadius: "8px",
         marginBottom: "24px",
-        border: "1px solid #E5E7EB",
+        border: "1px solid #374151",
       }}>
-        <h1 style={{ margin: 0, color: "#111827", fontSize: "24px", fontWeight: "600" }}>
+        <h1 style={{ margin: 0, color: "#FFFFFF", fontSize: "24px", fontWeight: "600" }}>
           How I Built It
         </h1>
-        <p style={{ margin: "8px 0 0 0", color: "#6B7280", fontSize: "14px" }}>
+        <p style={{ margin: "8px 0 0 0", color: "#9CA3AF", fontSize: "14px" }}>
           Development timeline showing the technical build process
         </p>
         
@@ -217,7 +217,7 @@ export default function BuildTimeline() {
               <span style={{ 
                 padding: "2px 6px", 
                 backgroundColor: NODE_COLORS[type], 
-                color: type === "UI" ? "#111827" : "#FFFFFF",
+                color: type === "UI" ? "#FFFFFF" : "#FFFFFF",
                 borderRadius: "4px",
                 fontWeight: "500",
               }}>
@@ -232,19 +232,19 @@ export default function BuildTimeline() {
       <div style={{ position: "relative" }} onClick={handleContainerClick}>
         {/* Main timeline */}
         <div style={{ 
-          backgroundColor: "#FFFFFF", 
+          backgroundColor: "#1F2937", 
           padding: "24px", 
           borderRadius: "8px",
-          border: "1px solid #E5E7EB",
+          border: "1px solid #374151",
         }}>
           {/* Timeline layout with 5 phases */}
           <div style={{ display: "grid", gap: "40px" }}>
             {/* Phase 1: Data Infrastructure */}
             <div style={{ 
-              border: "2px solid #E5E7EB", 
+              border: "2px solid #374151", 
               borderRadius: "12px", 
               padding: "24px",
-              backgroundColor: "#F9FAFB",
+              backgroundColor: "#000000",
             }}>
               <div style={{ 
                 display: "flex", 
@@ -253,7 +253,7 @@ export default function BuildTimeline() {
                 marginBottom: "20px",
                 fontSize: "18px",
                 fontWeight: "600",
-                color: "#111827",
+                color: "#FFFFFF",
               }}>
                 <div style={{
                   width: "32px",
@@ -283,7 +283,7 @@ export default function BuildTimeline() {
                         gap: "8px",
                         padding: "12px 16px",
                         backgroundColor: NODE_COLORS[node.type],
-                        color: node.type === "UI" ? "#111827" : "#FFFFFF",
+                        color: node.type === "UI" ? "#FFFFFF" : "#FFFFFF",
                         border: `2px solid ${NODE_BORDER_COLORS[node.type]}`,
                         borderRadius: "8px",
                         cursor: "pointer",
@@ -297,27 +297,27 @@ export default function BuildTimeline() {
                     </div>
                   </div>
                 ))}
-                <div style={{ fontSize: "12px", color: "#6B7280" }}>→ ETL pipeline</div>
-                {TIMELINE_DATA.nodes.filter(n => n.id === "postgres_db").map(node => (
-                  <div key={node.id} style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                    <div
-                      data-node
-                      onClick={(e) => handleNodeClick(node, e)}
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: "8px",
-                        padding: "12px 16px",
-                        backgroundColor: NODE_COLORS[node.type],
-                        color: node.type === "UI" ? "#111827" : "#FFFFFF",
-                        border: `2px solid ${NODE_BORDER_COLORS[node.type]}`,
-                        borderRadius: "8px",
-                        cursor: "pointer",
-                        fontSize: "14px",
-                        fontWeight: "500",
-                        minWidth: "200px",
-                      }}
-                    >
+                <div style={{ fontSize: "12px", color: "#9CA3AF" }}>→ ETL pipeline</div>
+                                 {TIMELINE_DATA.nodes.filter(n => n.id === "postgres_db").map(node => (
+                   <div key={node.id} style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                     <div
+                       data-node
+                       onClick={(e) => handleNodeClick(node, e)}
+                       style={{
+                         display: "flex",
+                         alignItems: "center",
+                         gap: "8px",
+                         padding: "12px 16px",
+                         backgroundColor: NODE_COLORS[node.type],
+                         color: node.type === "UI" ? "#FFFFFF" : "#FFFFFF",
+                         border: `2px solid ${NODE_BORDER_COLORS[node.type]}`,
+                         borderRadius: "8px",
+                         cursor: "pointer",
+                         fontSize: "14px",
+                         fontWeight: "500",
+                         minWidth: "200px",
+                       }}
+                     >
                       <span style={{ fontSize: "18px" }}>{ICONS[node.type]}</span>
                       {node.title}
                     </div>
@@ -328,10 +328,10 @@ export default function BuildTimeline() {
 
             {/* Phase 2: Model Development & Validation (Combined) */}
             <div style={{ 
-              border: "2px solid #E5E7EB", 
+              border: "2px solid #374151", 
               borderRadius: "12px", 
               padding: "24px",
-              backgroundColor: "#F9FAFB",
+              backgroundColor: "#000000",
             }}>
               <div style={{ 
                 display: "flex", 
@@ -340,7 +340,7 @@ export default function BuildTimeline() {
                 marginBottom: "20px",
                 fontSize: "18px",
                 fontWeight: "600",
-                color: "#111827",
+                color: "#FFFFFF",
               }}>
                 <div style={{
                   width: "32px",
@@ -370,7 +370,7 @@ export default function BuildTimeline() {
                          gap: "8px",
                          padding: "12px 16px",
                          backgroundColor: NODE_COLORS[node.type],
-                         color: node.type === "UI" ? "#111827" : "#FFFFFF",
+                         color: node.type === "UI" ? "#FFFFFF" : "#FFFFFF",
                          border: `2px solid ${NODE_BORDER_COLORS[node.type]}`,
                          borderRadius: "8px",
                          cursor: "pointer",
@@ -384,7 +384,7 @@ export default function BuildTimeline() {
                      </div>
                    </div>
                  ))}
-                 <div style={{ fontSize: "12px", color: "#6B7280" }}>→ model selection</div>
+                 <div style={{ fontSize: "12px", color: "#9CA3AF" }}>→ model selection</div>
                  {TIMELINE_DATA.nodes.filter(n => n.id === "prompt_engineering").map(node => (
                    <div key={node.id} style={{ display: "flex", alignItems: "center", gap: "8px" }}>
                      <div
@@ -396,7 +396,7 @@ export default function BuildTimeline() {
                          gap: "8px",
                          padding: "12px 16px",
                          backgroundColor: NODE_COLORS[node.type],
-                         color: node.type === "UI" ? "#111827" : "#FFFFFF",
+                         color: node.type === "UI" ? "#FFFFFF" : "#FFFFFF",
                          border: `2px solid ${NODE_BORDER_COLORS[node.type]}`,
                          borderRadius: "8px",
                          cursor: "pointer",
@@ -410,7 +410,7 @@ export default function BuildTimeline() {
                      </div>
                    </div>
                  ))}
-                 <div style={{ fontSize: "12px", color: "#6B7280" }}>→ validation</div>
+                 <div style={{ fontSize: "12px", color: "#9CA3AF" }}>→ validation</div>
                  {TIMELINE_DATA.nodes.filter(n => n.id === "model_validation").map(node => (
                    <div key={node.id} style={{ display: "flex", alignItems: "center", gap: "8px" }}>
                      <div
@@ -422,7 +422,7 @@ export default function BuildTimeline() {
                          gap: "8px",
                          padding: "12px 16px",
                          backgroundColor: NODE_COLORS[node.type],
-                         color: node.type === "UI" ? "#111827" : "#FFFFFF",
+                         color: node.type === "UI" ? "#FFFFFF" : "#FFFFFF",
                          border: `2px solid ${NODE_BORDER_COLORS[node.type]}`,
                          borderRadius: "8px",
                          cursor: "pointer",
@@ -441,10 +441,10 @@ export default function BuildTimeline() {
 
             {/* Phase 3: Production Deployment */}
             <div style={{ 
-              border: "2px solid #E5E7EB", 
+              border: "2px solid #374151", 
               borderRadius: "12px", 
               padding: "24px",
-              backgroundColor: "#F9FAFB",
+              backgroundColor: "#000000",
             }}>
               <div style={{ 
                 display: "flex", 
@@ -453,7 +453,7 @@ export default function BuildTimeline() {
                 marginBottom: "20px",
                 fontSize: "18px",
                 fontWeight: "600",
-                color: "#111827",
+                color: "#FFFFFF",
               }}>
                 <div style={{
                   width: "32px",
@@ -483,7 +483,7 @@ export default function BuildTimeline() {
                         gap: "8px",
                         padding: "12px 16px",
                         backgroundColor: NODE_COLORS[node.type],
-                        color: node.type === "UI" ? "#111827" : "#FFFFFF",
+                        color: node.type === "UI" ? "#FFFFFF" : "#FFFFFF",
                         border: `2px solid ${NODE_BORDER_COLORS[node.type]}`,
                         borderRadius: "8px",
                         cursor: "pointer",
@@ -497,7 +497,7 @@ export default function BuildTimeline() {
                     </div>
                   </div>
                 ))}
-                <div style={{ fontSize: "12px", color: "#6B7280" }}>→ production API</div>
+                <div style={{ fontSize: "12px", color: "#9CA3AF" }}>→ production API</div>
                 {TIMELINE_DATA.nodes.filter(n => n.id === "cron_scheduler").map(node => (
                   <div key={node.id} style={{ display: "flex", alignItems: "center", gap: "8px" }}>
                     <div
@@ -509,7 +509,7 @@ export default function BuildTimeline() {
                         gap: "8px",
                         padding: "12px 16px",
                         backgroundColor: NODE_COLORS[node.type],
-                        color: node.type === "UI" ? "#111827" : "#FFFFFF",
+                        color: node.type === "UI" ? "#FFFFFF" : "#FFFFFF",
                         border: `2px solid ${NODE_BORDER_COLORS[node.type]}`,
                         borderRadius: "8px",
                         cursor: "pointer",
@@ -528,10 +528,10 @@ export default function BuildTimeline() {
 
             {/* Phase 4: Trading Integration */}
             <div style={{ 
-              border: "2px solid #E5E7EB", 
+              border: "2px solid #374151", 
               borderRadius: "12px", 
               padding: "24px",
-              backgroundColor: "#F9FAFB",
+              backgroundColor: "#000000",
             }}>
               <div style={{ 
                 display: "flex", 
@@ -540,7 +540,7 @@ export default function BuildTimeline() {
                 marginBottom: "20px",
                 fontSize: "18px",
                 fontWeight: "600",
-                color: "#111827",
+                color: "#FFFFFF",
               }}>
                 <div style={{
                   width: "32px",
@@ -570,7 +570,7 @@ export default function BuildTimeline() {
                         gap: "8px",
                         padding: "12px 16px",
                         backgroundColor: NODE_COLORS[node.type],
-                        color: node.type === "UI" ? "#111827" : "#FFFFFF",
+                        color: node.type === "UI" ? "#FFFFFF" : "#FFFFFF",
                         border: `2px solid ${NODE_BORDER_COLORS[node.type]}`,
                         borderRadius: "8px",
                         cursor: "pointer",
@@ -587,13 +587,13 @@ export default function BuildTimeline() {
               </div>
             </div>
 
-            {/* Phase 5: Frontend Development */}
-            <div style={{ 
-              border: "2px solid #E5E7EB", 
-              borderRadius: "12px", 
-              padding: "24px",
-              backgroundColor: "#F9FAFB",
-            }}>
+                         {/* Phase 5: Frontend Development */}
+             <div style={{ 
+               border: "2px solid #374151", 
+               borderRadius: "12px", 
+               padding: "24px",
+               backgroundColor: "#000000",
+             }}>
               <div style={{ 
                 display: "flex", 
                 alignItems: "center", 
@@ -601,7 +601,7 @@ export default function BuildTimeline() {
                 marginBottom: "20px",
                 fontSize: "18px",
                 fontWeight: "600",
-                color: "#111827",
+                                 color: "#FFFFFF",
               }}>
                 <div style={{
                   width: "32px",
@@ -631,7 +631,7 @@ export default function BuildTimeline() {
                         gap: "8px",
                         padding: "12px 16px",
                         backgroundColor: NODE_COLORS[node.type],
-                        color: node.type === "UI" ? "#111827" : "#FFFFFF",
+                        color: node.type === "UI" ? "#FFFFFF" : "#FFFFFF",
                         border: `2px solid ${NODE_BORDER_COLORS[node.type]}`,
                         borderRadius: "8px",
                         cursor: "pointer",
@@ -659,8 +659,8 @@ export default function BuildTimeline() {
               top: `${drawerPosition.top}px`,
               left: `${drawerPosition.left}px`,
               width: "320px",
-              backgroundColor: "#FFFFFF",
-              border: "1px solid #E5E7EB",
+              backgroundColor: "#1F2937",
+              border: "1px solid #374151",
               borderRadius: "8px",
               padding: "24px",
               height: "fit-content",
@@ -674,7 +674,7 @@ export default function BuildTimeline() {
                 gap: "6px",
                 padding: "4px 8px",
                 backgroundColor: NODE_COLORS[selectedNode.type],
-                color: selectedNode.type === "UI" ? "#111827" : "#FFFFFF",
+                color: selectedNode.type === "UI" ? "#FFFFFF" : "#FFFFFF",
                 borderRadius: "4px",
                 fontSize: "12px",
                 fontWeight: "500",
@@ -683,19 +683,19 @@ export default function BuildTimeline() {
                 <span style={{ fontSize: "14px" }}>{ICONS[selectedNode.type]}</span>
                 {selectedNode.type}
               </div>
-              <h3 style={{ margin: "0 0 12px 0", color: "#111827", fontSize: "18px" }}>
+              <h3 style={{ margin: "0 0 12px 0", color: "#FFFFFF", fontSize: "18px" }}>
                 {selectedNode.title}
               </h3>
-              <p style={{ margin: "0 0 16px 0", color: "#6B7280", fontSize: "14px", lineHeight: "1.5" }}>
+              <p style={{ margin: "0 0 16px 0", color: "#9CA3AF", fontSize: "14px", lineHeight: "1.5" }}>
                 {selectedNode.summary}
               </p>
             </div>
 
             <div style={{ marginBottom: "20px" }}>
-              <h4 style={{ margin: "0 0 8px 0", color: "#111827", fontSize: "14px", fontWeight: "600" }}>
+              <h4 style={{ margin: "0 0 8px 0", color: "#FFFFFF", fontSize: "14px", fontWeight: "600" }}>
                 Technical Details
               </h4>
-              <ul style={{ margin: 0, paddingLeft: "16px", color: "#6B7280", fontSize: "14px" }}>
+              <ul style={{ margin: 0, paddingLeft: "16px", color: "#9CA3AF", fontSize: "14px" }}>
                 {selectedNode.id === "data_scraping" && (
                   <>
                     <li>REST API integration with Financial Modeling Prep</li>
@@ -772,15 +772,15 @@ export default function BuildTimeline() {
 
             {selectedNode.meta?.metrics && (
               <div style={{ marginBottom: "20px" }}>
-                <h4 style={{ margin: "0 0 8px 0", color: "#111827", fontSize: "14px", fontWeight: "600" }}>
+                <h4 style={{ margin: "0 0 8px 0", color: "#FFFFFF", fontSize: "14px", fontWeight: "600" }}>
                   Data Metrics
                 </h4>
                 <div style={{ 
                   padding: "12px", 
-                  backgroundColor: "#F9FAFB", 
+                  backgroundColor: "#000000", 
                   borderRadius: "6px",
                   fontSize: "12px",
-                  color: "#6B7280",
+                  color: "#9CA3AF",
                 }}>
                   {selectedNode.meta.metrics}
                 </div>
@@ -789,15 +789,15 @@ export default function BuildTimeline() {
 
             {selectedNode.meta?.timeframe && (
               <div style={{ marginBottom: "20px" }}>
-                <h4 style={{ margin: "0 0 8px 0", color: "#111827", fontSize: "14px", fontWeight: "600" }}>
+                <h4 style={{ margin: "0 0 8px 0", color: "#FFFFFF", fontSize: "14px", fontWeight: "600" }}>
                   Timeframe
                 </h4>
                 <div style={{ 
                   padding: "12px", 
-                  backgroundColor: "#F9FAFB", 
+                  backgroundColor: "#000000", 
                   borderRadius: "6px",
                   fontSize: "12px",
-                  color: "#6B7280",
+                  color: "#9CA3AF",
                 }}>
                   {selectedNode.meta.timeframe}
                 </div>
@@ -806,15 +806,15 @@ export default function BuildTimeline() {
 
             {selectedNode.meta?.volume && (
               <div style={{ marginBottom: "20px" }}>
-                <h4 style={{ margin: "0 0 8px 0", color: "#111827", fontSize: "14px", fontWeight: "600" }}>
+                <h4 style={{ margin: "0 0 8px 0", color: "#FFFFFF", fontSize: "14px", fontWeight: "600" }}>
                   Volume
                 </h4>
                 <div style={{ 
                   padding: "12px", 
-                  backgroundColor: "#F9FAFB", 
+                  backgroundColor: "#000000", 
                   borderRadius: "6px",
                   fontSize: "12px",
-                  color: "#6B7280",
+                  color: "#9CA3AF",
                 }}>
                   {selectedNode.meta.volume}
                 </div>
@@ -823,15 +823,15 @@ export default function BuildTimeline() {
 
             {selectedNode.meta?.frequency && (
               <div style={{ marginBottom: "20px" }}>
-                <h4 style={{ margin: "0 0 8px 0", color: "#111827", fontSize: "14px", fontWeight: "600" }}>
+                <h4 style={{ margin: "0 0 8px 0", color: "#FFFFFF", fontSize: "14px", fontWeight: "600" }}>
                   Frequency
                 </h4>
                 <div style={{ 
                   padding: "12px", 
-                  backgroundColor: "#F9FAFB", 
+                  backgroundColor: "#000000", 
                   borderRadius: "6px",
                   fontSize: "12px",
-                  color: "#6B7280",
+                  color: "#9CA3AF",
                 }}>
                   {selectedNode.meta.frequency}
                 </div>
@@ -840,7 +840,7 @@ export default function BuildTimeline() {
 
             {selectedNode.links && selectedNode.links.length > 0 && (
               <div>
-                <h4 style={{ margin: "0 0 8px 0", color: "#111827", fontSize: "14px", fontWeight: "600" }}>
+                <h4 style={{ margin: "0 0 8px 0", color: "#FFFFFF", fontSize: "14px", fontWeight: "600" }}>
                   Links
                 </h4>
                 {selectedNode.links.map((link, index) => (
@@ -852,8 +852,8 @@ export default function BuildTimeline() {
                     style={{
                       display: "block",
                       padding: "8px 12px",
-                      backgroundColor: "#F3F4F6",
-                      color: "#4F46E5",
+                      backgroundColor: "#374151",
+                      color: "#8B5CF6",
                       textDecoration: "none",
                       borderRadius: "6px",
                       fontSize: "14px",
