@@ -540,6 +540,86 @@ input::placeholder {
   margin: var(--space-md) 0;
 }
 
+/* Mobile Navigation */
+.mobile-menu-btn {
+  display: none;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: var(--space-sm);
+  color: var(--text);
+}
+
+.hamburger {
+  display: block;
+  width: 24px;
+  height: 2px;
+  background: var(--text);
+  position: relative;
+  transition: all 0.3s ease;
+}
+
+.hamburger::before,
+.hamburger::after {
+  content: '';
+  position: absolute;
+  width: 24px;
+  height: 2px;
+  background: var(--text);
+  transition: all 0.3s ease;
+}
+
+.hamburger::before {
+  top: -8px;
+}
+
+.hamburger::after {
+  bottom: -8px;
+}
+
+.hamburger.open {
+  background: transparent;
+}
+
+.hamburger.open::before {
+  transform: rotate(45deg);
+  top: 0;
+}
+
+.hamburger.open::after {
+  transform: rotate(-45deg);
+  bottom: 0;
+}
+
+/* Touch-Friendly Interactions */
+@media (max-width: 768px) {
+  .btn {
+    min-height: 44px;
+    padding: var(--space-md) var(--space-lg);
+    font-size: 16px;
+  }
+  
+  .nav-link {
+    padding: var(--space-md) var(--space-lg);
+    min-height: 44px;
+    display: flex;
+    align-items: center;
+  }
+  
+  .card {
+    padding: var(--space-lg);
+  }
+  
+  .table {
+    font-size: 14px;
+  }
+  
+  .table th,
+  .table td {
+    padding: var(--space-sm) var(--space-md);
+  }
+}
+
 /* Responsive Design */
 @media (max-width: 768px) {
   .container {
@@ -547,8 +627,35 @@ input::placeholder {
   }
   
   .nav {
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+    padding: var(--space-md);
+  }
+  
+  .nav-links {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: var(--bg);
     flex-direction: column;
-    gap: var(--space-sm);
+    justify-content: center;
+    align-items: center;
+    gap: var(--space-lg);
+    transform: translateX(-100%);
+    transition: transform 0.3s ease;
+    z-index: 1000;
+  }
+  
+  .nav-links.mobile-open {
+    transform: translateX(0);
+  }
+  
+  .mobile-menu-btn {
+    display: block;
+    z-index: 1001;
   }
   
   .grid-2,
@@ -563,6 +670,21 @@ input::placeholder {
   
   h2 {
     font-size: 1.375rem;
+  }
+  
+  /* Table Responsiveness */
+  .table-container {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  
+  .table {
+    min-width: 600px;
+  }
+  
+  /* Card spacing for mobile */
+  .card + .card {
+    margin-top: var(--space-lg);
   }
 }
 

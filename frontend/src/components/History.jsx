@@ -288,7 +288,7 @@ const History = () => {
                   Showing top 5 orders by notional value (largest trades first)
                 </p>
               )}
-              <div className="overflow-x-auto">
+              <div className="table-container">
                 <table className="table table-compact w-full">
                                   <thead>
                   <tr>
@@ -324,7 +324,7 @@ const History = () => {
           )}
 
           {activeTab === 'fills' && (
-            <div className="overflow-x-auto">
+            <div className="table-container">
               <table className="table table-compact w-full">
                 <thead>
                   <tr>

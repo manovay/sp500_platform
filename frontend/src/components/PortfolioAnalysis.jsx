@@ -113,7 +113,7 @@ export default function PortfolioAnalysis() {
       </div>
 
       <div className="card mb-lg">
-        <div className="overflow-x-auto">
+        <div className="table-container">
           <table className="table table-compact w-full">
             <thead>
               <tr>

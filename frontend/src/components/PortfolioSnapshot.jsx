@@ -200,7 +200,7 @@ const PortfolioSnapshot = () => {
         </div>
 
         {/* Positions Table */}
-        <div className="overflow-x-auto">
+        <div className="table-container">
           <table className="table table-compact w-full">
             <thead>
               <tr>
