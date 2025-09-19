@@ -5,13 +5,12 @@ export default function StatisticalAnalysisPage() {
   const [performanceData, setPerformanceData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [timeframe, setTimeframe] = useState('4'); // weeks
   const [treasuryRate, setTreasuryRate] = useState(null);
   const [chartTab, setChartTab] = useState('days'); // 'days' or 'weeks'
 
   useEffect(() => {
     loadPerformanceData();
-  }, [timeframe]);
+  }, []);
 
   const loadPerformanceData = async () => {
     try {
@@ -22,7 +21,7 @@ export default function StatisticalAnalysisPage() {
       const [treasuryData, summary] = await Promise.all([
         getTreasuryRate(),
         getPerformanceSummary({ 
-          weeks: parseInt(timeframe)
+          // Always use full history - backend will calculate from 8-25-2025
           // rf_annual will be fetched automatically by backend
         })
       ]);
@@ -443,36 +442,6 @@ export default function StatisticalAnalysisPage() {
         </div>
       </div>
 
-      {/* Analysis Controls */}
-      <div className="card mb-lg">
-        <div className="analysis-controls">
-          <div className="control-group">
-            <label>Analysis Period:</label>
-            <select 
-              value={timeframe} 
-              onChange={(e) => setTimeframe(e.target.value)}
-            >
-              <option value="4">Last 4 weeks</option>
-              <option value="12">Last 12 weeks</option>
-              <option value="26">Last 26 weeks</option>
-              <option value="52">Last 52 weeks</option>
-            </select>
-          </div>
-          
-          <div className="control-group">
-            <label>Risk-Free Rate (Treasury):</label>
-            <div className="treasury-rate-display">
-              {treasuryRate ? (
-                <span className="treasury-rate-value">
-                  {treasuryRate.treasury_rate_percent.toFixed(2)}% (Auto-fetched)
-            </span>
-              ) : (
-                <span className="treasury-rate-loading">Loading...</span>
-              )}
-          </div>
-          </div>
-        </div>
-      </div>
 
 
       {/* Compressed Performance Table */}
@@ -480,6 +449,16 @@ export default function StatisticalAnalysisPage() {
         <div className="card-header">
           <h2 className="card-title">Performance Summary</h2>
           <p className="section-explanation">Key performance metrics comparing OracleZero vs SPY benchmark.</p>
+          <div className="treasury-rate-display" style={{ marginTop: 'var(--space-sm)' }}>
+            <label style={{ fontWeight: '600', marginRight: 'var(--space-sm)' }}>Risk-Free Rate (Treasury):</label>
+            {treasuryRate ? (
+              <span className="treasury-rate-value">
+                {treasuryRate.treasury_rate_percent.toFixed(2)}% (Auto-fetched)
+              </span>
+            ) : (
+              <span className="treasury-rate-loading">Loading...</span>
+            )}
+          </div>
         </div>
         <div className="card-body">
           <div className="compressed-table">
