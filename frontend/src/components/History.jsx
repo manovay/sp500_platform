@@ -1,23 +1,20 @@
 import React, { useState, useEffect } from 'react';
-import { getHistory, getOrderHistory, getActivityHistory } from '../api';
+import { getHistory, getOrderHistory } from '../api';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
 const History = () => {
   const [historyData, setHistoryData] = useState(null);
   const [orders, setOrders] = useState([]);
-  const [activities, setActivities] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [timeframe, setTimeframe] = useState('ytd');
-  const [activeTab, setActiveTab] = useState('orders');
 
   const fetchData = async () => {
     try {
       setLoading(true);
-      const [history, ordersData, activitiesData] = await Promise.all([
+      const [history, ordersData] = await Promise.all([
         getHistory(timeframe),
-        getOrderHistory(),
-        getActivityHistory()
+        getOrderHistory()
       ]);
              console.log('History data received:', history);
        console.log('History array:', history?.history);
@@ -27,7 +24,6 @@ const History = () => {
        console.log('Last data point:', history?.history?.[history?.history?.length - 1]);
       setHistoryData(history);
       setOrders(ordersData);
-      setActivities(activitiesData);
       setError(null);
     } catch (err) {
       setError('Failed to fetch history data');
@@ -94,7 +90,25 @@ const History = () => {
     return side.toLowerCase() === 'buy' ? 'text-success' : 'text-danger';
   };
 
+  // Calculate timeframe-specific KPIs from chart data
+  const calculateTimeframeKPIs = () => {
+    if (!historyData?.history || historyData.history.length === 0) {
+      return null;
+    }
 
+    const history = historyData.history;
+    const startEquity = history[0].equity;
+    const currentEquity = history[history.length - 1].equity;
+    const pl = currentEquity - startEquity;
+    const returnPercent = (pl / startEquity) * 100;
+
+    return {
+      start_equity: startEquity,
+      current_equity: currentEquity,
+      pl: pl,
+      return_percent: returnPercent
+    };
+  };
 
   const CustomTooltip = ({ active, payload, label }) => {
     if (active && payload && payload.length) {
@@ -236,123 +250,86 @@ const History = () => {
       </div>
 
       {/* KPI Row */}
-      {historyData?.kpis && (
-        <div className="grid grid-4 mb-xl">
-          <div className="card">
-            <h4 className="text-muted mb-sm">Start Equity</h4>
-            <div className="text-xl font-bold">{formatCurrency(historyData.kpis.start_equity)}</div>
-          </div>
-          <div className="card">
-            <h4 className="text-muted mb-sm">Current Equity</h4>
-            <div className="text-xl font-bold">{formatCurrency(historyData.kpis.current_equity)}</div>
-          </div>
-          <div className="card">
-            <h4 className="text-muted mb-sm">P&L</h4>
-            <div className={`text-xl font-bold ${getPLColor(historyData.kpis.ytd_pl)}`}>
-              {formatCurrency(historyData.kpis.ytd_pl)}
+      {historyData?.history && historyData.history.length > 0 && (() => {
+        const timeframeKPIs = calculateTimeframeKPIs();
+        return timeframeKPIs ? (
+          <div className="grid grid-4 mb-xl">
+            <div className="card">
+              <h4 className="text-muted mb-sm">Start Equity</h4>
+              <div className="text-xl font-bold">{formatCurrency(timeframeKPIs.start_equity)}</div>
+            </div>
+            <div className="card">
+              <h4 className="text-muted mb-sm">Current Equity</h4>
+              <div className="text-xl font-bold">{formatCurrency(timeframeKPIs.current_equity)}</div>
+            </div>
+            <div className="card">
+              <h4 className="text-muted mb-sm">P&L</h4>
+              <div className={`text-xl font-bold ${getPLColor(timeframeKPIs.pl)}`}>
+                {formatCurrency(timeframeKPIs.pl)}
+              </div>
+            </div>
+            <div className="card">
+              <h4 className="text-muted mb-sm">Return</h4>
+              <div className={`text-xl font-bold ${getPLColor(timeframeKPIs.return_percent)}`}>
+                {formatPercentage(timeframeKPIs.return_percent)}
+              </div>
             </div>
           </div>
-          <div className="card">
-            <h4 className="text-muted mb-sm">Return</h4>
-            <div className={`text-xl font-bold ${getPLColor(historyData.kpis.ytd_return)}`}>
-              {formatPercentage(historyData.kpis.ytd_return)}
-            </div>
-          </div>
-        </div>
-      )}
+        ) : null;
+      })()}
 
       {/* Tabs */}
       <div className="card">
         <div className="tabs mb-lg">
                      <ul className="tab-list">
              <li 
-               className={`tab-item ${activeTab === 'orders' ? 'active' : ''}`}
-               onClick={() => setActiveTab('orders')}
+               className={`tab-item active`}
              >
                Orders
-             </li>
-             <li 
-               className={`tab-item ${activeTab === 'fills' ? 'active' : ''}`}
-               onClick={() => setActiveTab('fills')}
-             >
-               Fills
              </li>
            </ul>
         </div>
 
         <div className="tab-content">
-          {activeTab === 'orders' && (
-            <div>
-              {orders.length > 0 && (
-                <p className="text-sm text-muted mb-md">
-                  Showing top 5 orders by notional value (largest trades first)
-                </p>
-              )}
-              <div className="table-container">
-                <table className="table table-compact w-full">
-                                  <thead>
-                  <tr>
-                                         <th>Status</th>
-                     <th>Symbol</th>
-                     <th>Side</th>
-                     <th>QTY</th>
-                     <th>Notional</th>
-                  </tr>
-                </thead>
-                  <tbody>
-                    {orders.map((order) => (
-                      <tr key={order.id}>
-                                                 <td>
-                           <span className={`pill ${getStatusColor(order.status) === 'text-success' ? 'pill-success' : getStatusColor(order.status) === 'text-danger' ? 'pill-danger' : 'pill'}`}>
-                             {order.status.toUpperCase()}
-                           </span>
-                         </td>
-                         <td className="font-semibold">{order.symbol}</td>
-                         <td>
-                           <span className={`pill ${getSideColor(order.side) === 'text-success' ? 'pill-success' : 'pill-danger'}`}>
-                             {order.side.toUpperCase()}
-                           </span>
-                         </td>
-                                              <td>{order.qty.toFixed(4) === '0.0000' ? 'FRACTIONAL' : order.qty.toFixed(4)}</td>
-                      <td>{formatCurrency(order.notional)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
-
-          {activeTab === 'fills' && (
+          <div>
+            {orders.length > 0 && (
+              <p className="text-sm text-muted mb-md">
+                Showing top 5 orders by notional value (largest trades first)
+              </p>
+            )}
             <div className="table-container">
               <table className="table table-compact w-full">
-                <thead>
-                  <tr>
-                                         <th>Symbol</th>
-                     <th>Side</th>
-                     <th>QTY</th>
-                     <th>Price</th>
-                     <th>Time</th>
-                  </tr>
-                </thead>
+                                <thead>
+                <tr>
+                                       <th>Status</th>
+                   <th>Symbol</th>
+                   <th>Side</th>
+                   <th>QTY</th>
+                   <th>Notional</th>
+                </tr>
+              </thead>
                 <tbody>
-                  {activities.map((activity) => (
-                    <tr key={activity.id}>
-                                             <td className="font-semibold">{activity.symbol}</td>
-                       <td>
-                         <span className={`pill ${getSideColor(activity.side) === 'text-success' ? 'pill-success' : 'pill-danger'}`}>
-                           {activity.side.toUpperCase()}
+                  {orders.map((order) => (
+                    <tr key={order.id}>
+                                               <td>
+                         <span className={`pill ${getStatusColor(order.status) === 'text-success' ? 'pill-success' : getStatusColor(order.status) === 'text-danger' ? 'pill-danger' : 'pill'}`}>
+                           {order.status.toUpperCase()}
                          </span>
                        </td>
-                                             <td>{activity.qty ? (activity.qty.toFixed(4) === '0.0000' ? 'FRACTIONAL' : activity.qty.toFixed(4)) : 'N/A'}</td>
-                      <td>{formatCurrency(activity.price)}</td>
-                      <td>{formatDateTime(activity.time)}</td>
+                       <td className="font-semibold">{order.symbol}</td>
+                       <td>
+                         <span className={`pill ${getSideColor(order.side) === 'text-success' ? 'pill-success' : 'pill-danger'}`}>
+                           {order.side.toUpperCase()}
+                         </span>
+                       </td>
+                                            <td>{order.qty.toFixed(4) === '0.0000' ? 'FRACTIONAL' : order.qty.toFixed(4)}</td>
+                    <td>{formatCurrency(order.notional)}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
-          )}
+          </div>
         </div>
       </div>
     </div>

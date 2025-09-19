@@ -42,10 +42,16 @@ export default function Layout() {
               History
             </Link>
             <Link 
+              to="/portfolio/statistics" 
+              className={`nav-link ${location.pathname === '/portfolio/statistics' ? 'active' : ''}`}
+            >
+              Statistics
+            </Link>
+            <Link 
               to="/portfolio/analysis" 
               className={`nav-link ${location.pathname === '/portfolio/analysis' ? 'active' : ''}`}
             >
-              Analysis
+              Weight Analysis
             </Link>
             <Link 
               to="/portfolio/flowchart" 

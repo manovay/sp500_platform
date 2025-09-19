@@ -121,3 +121,55 @@ export async function getActivityHistory() {
     throw error;
   }
 }
+
+// Performance Statistics Functions
+export async function getPerformanceSummary(params = {}) {
+  try {
+    const queryParams = new URLSearchParams();
+    if (params.since) queryParams.append('since', params.since);
+    if (params.weeks) queryParams.append('weeks', params.weeks);
+    if (params.rf_annual !== undefined) queryParams.append('rf_annual', params.rf_annual);
+    if (params.boots) queryParams.append('boots', params.boots);
+    
+    const response = await fetch(`${API_BASE}/api/performance/summary?${queryParams}`);
+    const data = await response.json();
+    if (data.status === 'ok') {
+      return data.performance;
+    } else {
+      throw new Error(data.error || 'Failed to fetch performance summary');
+    }
+  } catch (error) {
+    console.error('Error fetching performance summary:', error);
+    throw error;
+  }
+}
+
+export async function getPerformanceQuick() {
+  try {
+    const response = await fetch(`${API_BASE}/api/performance/quick`);
+    const data = await response.json();
+    if (data.status === 'ok') {
+      return data.quick_stats;
+    } else {
+      throw new Error(data.error || 'Failed to fetch quick performance stats');
+    }
+  } catch (error) {
+    console.error('Error fetching quick performance stats:', error);
+    throw error;
+  }
+}
+
+export async function getTreasuryRate() {
+  try {
+    const response = await fetch(`${API_BASE}/api/treasury-rate`);
+    const data = await response.json();
+    if (data.status === 'ok') {
+      return data;
+    } else {
+      throw new Error(data.error || 'Failed to fetch treasury rate');
+    }
+  } catch (error) {
+    console.error('Error fetching treasury rate:', error);
+    throw error;
+  }
+}

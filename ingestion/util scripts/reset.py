@@ -68,7 +68,10 @@ def init_database():
       ('profiles',          'annual',    'fetch_profile.py', '2025-08-25'),
       ('allocations',       'weekly',    'fetch_historical_market_cap.py', '2025-08-25'),
       ('predictions',       'weekly',    NULL, NULL),
-      ('weekly_llm_data',   'weekly',    'fetch_weekly_llm.py', NULL)
+      ('weekly_llm_data',   'weekly',    'fetch_weekly_llm.py', NULL),
+      ('daily_snapshots',   'daily',     'fetch_daily_snapshots.py', NULL),
+      ('nav_weekly',        'daily',     'fetch_daily_snapshots.py', NULL),
+      ('benchmark_weekly',  'daily',     'fetch_daily_snapshots.py', NULL)
     ON CONFLICT (table_name) DO UPDATE
       SET frequency = EXCLUDED.frequency,
           script_name = EXCLUDED.script_name,

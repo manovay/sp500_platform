@@ -85,7 +85,7 @@ export default function PortfolioAnalysis() {
     <div>
       <div className="card mb-lg">
         <div className="card-header">
-          <h1 className="card-title">Portfolio Analysis</h1>
+          <h1 className="card-title">Weight Analysis</h1>
           <p className="text-muted mb-0">Top 10 Allocation Differences: FMP vs LLM Recommendations</p>
         </div>
         <div className="card-body">

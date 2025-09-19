@@ -31,6 +31,7 @@ FETCH_MODULES = [
     ("fetch_historical_analyst", "grades_historical"),
     ("fetch_stock_news", "stock_news"),
     ("fetch_weekly_llm", "weekly_llm_data"),  # New weekly LLM module
+    ("fetch_daily_snapshots", "nav_weekly"),  # Daily portfolio and benchmark snapshots
     ("run_trades", "actual_portfolio_allocations")  # Trading execution module
 ]
 

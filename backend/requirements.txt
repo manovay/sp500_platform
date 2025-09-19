@@ -13,3 +13,7 @@ gunicorn>=21.0.0
 
 # Trading integration (for account/position data)
 alpaca-py>=0.20.0
+
+# Performance statistics
+numpy>=1.24.0
+scipy>=1.10.0

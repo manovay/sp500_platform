@@ -735,6 +735,11 @@ LLM_KEY = os.getenv("LLM_KEY")
 if not LLM_KEY:
     print("LLM_KEY not found in environment variables!")
 
+# Load FMP API key
+FMP_API_KEY = os.getenv("FMP_API_KEY")
+if not FMP_API_KEY:
+    print("FMP_API_KEY not found in environment variables!")
+
 # Custom JSON encoder to handle date and decimal objects
 class DateEncoder(json.JSONEncoder):
     def default(self, obj):
@@ -743,6 +748,51 @@ class DateEncoder(json.JSONEncoder):
         elif hasattr(obj, '__float__'):  # Handle Decimal, Fraction, etc.
             return float(obj)
         return super().default(obj)
+
+def fetch_treasury_rates():
+    """
+    Fetch current treasury rates from FMP API
+    Returns the 3-month treasury rate as the risk-free rate
+    Raises an exception if no data is available
+    """
+    if not FMP_API_KEY:
+        raise Exception("FMP_API_KEY not available")
+    
+    try:
+        # Use the new treasury-rates endpoint with date range
+        from datetime import datetime, timedelta
+        end_date = datetime.now()
+        start_date = end_date - timedelta(days=30)  # Get last 30 days of data
+        
+        url = f"https://financialmodelingprep.com/stable/treasury-rates?from={start_date.strftime('%Y-%m-%d')}&to={end_date.strftime('%Y-%m-%d')}&apikey={FMP_API_KEY}"
+        response = requests.get(url, timeout=10)
+        response.raise_for_status()
+        data = response.json()
+        
+        if not data or len(data) == 0:
+            raise Exception("No treasury rate data available from API")
+        
+        # Get the most recent treasury rate data (first item in the array)
+        latest_data = data[0]
+        
+        # Try to get 3-month rate first, then 1-month, then 10-year as fallback
+        treasury_rate = None
+        if 'month3' in latest_data and latest_data['month3']:
+            treasury_rate = float(latest_data['month3']) / 100  # Convert percentage to decimal
+        elif 'month1' in latest_data and latest_data['month1']:
+            treasury_rate = float(latest_data['month1']) / 100
+        elif 'year10' in latest_data and latest_data['year10']:
+            treasury_rate = float(latest_data['year10']) / 100
+        
+        if treasury_rate is None:
+            raise Exception("No valid treasury rate found in API response")
+        
+        print(f"Fetched treasury rate: {treasury_rate:.4f} ({treasury_rate*100:.2f}%)")
+        return treasury_rate
+            
+    except Exception as e:
+        print(f"Error fetching treasury rates: {e}")
+        raise e
 
 def call_render_endpoint(prompt):
     """
@@ -922,6 +972,425 @@ def portfolio_analysis():
             
     except Exception as e:
         print(f"Error in portfolio analysis: {e}")
+        return jsonify({"status": "error", "error": str(e)}), 500
+
+# ============================================================================
+# PERFORMANCE STATISTICS ENDPOINTS
+# ============================================================================
+
+def calculate_performance_stats(conn, since=None, weeks=None, rf_annual=None, boots=10000):
+    """
+    Calculate performance statistics using the same logic as run_performance_tests.py
+    Returns a dictionary with all performance metrics
+    """
+    import numpy as np
+    import math
+    from datetime import datetime, timedelta
+    
+    # Helper functions from run_performance_tests.py
+    def pct_to_float(arr_pct):
+        return np.array([float(x) / 100.0 for x in arr_pct], dtype=float)
+
+    def cumulative_return(weekly_r):
+        if weekly_r.size == 0:
+            return float('nan')
+        return float(np.prod(1.0 + weekly_r) - 1.0)
+
+    def max_drawdown(weekly_r):
+        if weekly_r.size == 0:
+            return float('nan')
+        equity = np.cumprod(1.0 + weekly_r)
+        peaks = np.maximum.accumulate(equity)
+        dd = (equity - peaks) / peaks
+        return float(np.min(dd))
+
+    def weekly_rf_from_annual(annual_rf):
+        return (1.0 + annual_rf)**(1.0 / 52) - 1.0
+
+    def ttest_two_sided_mean_gt_zero(x):
+        x = np.asarray(x, dtype=float)
+        n = x.size
+        if n < 2:
+            return float('nan'), 0, float('nan')
+        mean = x.mean()
+        sd = x.std(ddof=1)
+        if sd == 0.0:
+            t_stat = math.inf if mean > 0 else (-math.inf if mean < 0 else 0.0)
+            p = 0.0 if math.isfinite(t_stat) else 1.0
+            return t_stat, n - 1, p
+        se = sd / math.sqrt(n)
+        t_stat = mean / se
+        df = n - 1
+        try:
+            from scipy import stats
+            p = 2.0 * stats.t.sf(abs(t_stat), df=df)
+            return float(t_stat), df, float(p)
+        except Exception:
+            z = abs(t_stat)
+            p_one_side = 0.5 * math.erfc(z / math.sqrt(2.0))
+            p_two = 2.0 * p_one_side
+            return float(t_stat), df, float(p_two)
+
+    def bootstrap_mean_ci(x, iters=10000, seed=42):
+        rng = np.random.default_rng(seed)
+        n = x.size
+        if n == 0:
+            return (float('nan'), float('nan')), float('nan')
+        idx = rng.integers(0, n, size=(iters, n))
+        samp_means = x[idx].mean(axis=1)
+        lo, hi = np.percentile(samp_means, [2.5, 97.5])
+        prob_pos = float(np.mean(samp_means > 0.0))
+        return (float(lo), float(hi)), prob_pos
+
+    def fetch_daily_data(conn, since, weeks):
+        """Fetch daily data from nav_weekly and benchmark_weekly tables"""
+        where_conditions = ["n.week_start_date >= '2025-08-25'"]
+        params = {}
+        
+        if since:
+            since_date = max('2025-08-25', since)
+            where_conditions.append("n.week_start_date >= :since")
+            params["since"] = since_date
+
+        sql = f"""
+            SELECT n.week_start_date as date,
+                   n.equity,
+                   b.adj_close
+            FROM nav_weekly n
+            LEFT JOIN benchmark_weekly b ON n.week_start_date = b.week_start_date AND b.symbol = 'SPY'
+            WHERE n.equity IS NOT NULL AND b.adj_close IS NOT NULL
+            AND {' AND '.join(where_conditions)}
+            ORDER BY n.week_start_date
+        """
+        
+        rows = conn.execute(text(sql), params).fetchall()
+
+        if not rows or len(rows) < 2:
+            return [], np.array([], dtype=float), np.array([], dtype=float)
+
+        dates = []
+        daily_returns_portfolio = []
+        daily_returns_benchmark = []
+        
+        for i in range(1, len(rows)):
+            prev_equity = float(rows[i-1][1])
+            curr_equity = float(rows[i][1])
+            prev_price = float(rows[i-1][2])
+            curr_price = float(rows[i][2])
+            
+            if prev_equity > 0:
+                port_return = (curr_equity - prev_equity) / prev_equity
+            else:
+                port_return = 0.0
+                
+            if prev_price > 0:
+                bench_return = (curr_price - prev_price) / prev_price
+            else:
+                bench_return = 0.0
+            
+            dates.append(rows[i][0])
+            daily_returns_portfolio.append(port_return)
+            daily_returns_benchmark.append(bench_return)
+
+        rp = np.array(daily_returns_portfolio, dtype=float)
+        rb = np.array(daily_returns_benchmark, dtype=float)
+        
+        if weeks is not None and weeks > 0:
+            days_to_keep = weeks * 7
+            if len(dates) > days_to_keep:
+                dates = dates[-days_to_keep:]
+                rp = rp[-days_to_keep:]
+                rb = rb[-days_to_keep:]
+
+        return dates, rp, rb
+
+    def aggregate_daily_to_weekly(dates, daily_returns_portfolio, daily_returns_benchmark):
+        """Aggregate daily returns into weekly returns"""
+        if len(dates) == 0:
+            return [], np.array([], dtype=float), np.array([], dtype=float)
+        
+        weekly_data = {}
+        
+        for i, date in enumerate(dates):
+            if isinstance(date, str):
+                date_obj = datetime.strptime(date, '%Y-%m-%d').date()
+            else:
+                date_obj = date
+            
+            monday = date_obj - timedelta(days=date_obj.weekday())
+            
+            if monday not in weekly_data:
+                weekly_data[monday] = {
+                    'dates': [],
+                    'portfolio_returns': [],
+                    'benchmark_returns': []
+                }
+            
+            weekly_data[monday]['dates'].append(date)
+            weekly_data[monday]['portfolio_returns'].append(daily_returns_portfolio[i])
+            weekly_data[monday]['benchmark_returns'].append(daily_returns_benchmark[i])
+        
+        weekly_dates = []
+        weekly_portfolio = []
+        weekly_benchmark = []
+        
+        for monday in sorted(weekly_data.keys()):
+            week_data = weekly_data[monday]
+            
+            port_weekly = cumulative_return(np.array(week_data['portfolio_returns']))
+            bench_weekly = cumulative_return(np.array(week_data['benchmark_returns']))
+            
+            weekly_dates.append(monday)
+            weekly_portfolio.append(port_weekly)
+            weekly_benchmark.append(bench_weekly)
+        
+        return weekly_dates, np.array(weekly_portfolio), np.array(weekly_benchmark)
+
+    # Fetch current treasury rate if not provided
+    if rf_annual is None:
+        rf_annual = fetch_treasury_rates()
+    
+    # Main calculation logic
+    daily_dates, daily_rp, daily_rb = fetch_daily_data(conn, since, weeks)
+    
+    if daily_rp.size < 2:
+        return {"error": "Not enough daily data to run tests (need ≥ 2 days)"}
+    
+    dates, rp, rb = aggregate_daily_to_weekly(daily_dates, daily_rp, daily_rb)
+    
+    if rp.size < 2:
+        return {"error": "Not enough weekly data after aggregation (need ≥ 2 weeks)"}
+
+    start = dates[0]
+    end = dates[-1]
+    n = rp.size
+    rf_w = weekly_rf_from_annual(rf_annual)
+    
+    n_daily = daily_rp.size
+    daily_excess = daily_rp - daily_rb
+    excess = rp - rb
+    rp_rf = rp - rf_w
+
+    # Calculate all metrics
+    mean_rp = float(rp.mean())
+    std_rp = float(rp.std(ddof=1))
+    mean_rb = float(rb.mean())
+    std_rb = float(rb.std(ddof=1))
+    mean_ex = float(excess.mean())
+    std_ex = float(excess.std(ddof=1))
+
+    sharpe_ann = (mean_rp - rf_w) / std_rp * math.sqrt(52) if std_rp > 0 else float('nan')
+    ir_ann = mean_ex / std_ex * math.sqrt(52) if std_ex > 0 else float('nan')
+
+    cum_rp = cumulative_return(rp)
+    cum_rb = cumulative_return(rb)
+    cum_ex = cum_rp - cum_rb
+
+    mdd_rp = max_drawdown(rp)
+    mdd_rb = max_drawdown(rb)
+
+    win_rate = float(np.mean(excess > 0.0)) if n > 0 else float('nan')
+
+    t_stat, df, p_val = ttest_two_sided_mean_gt_zero(excess)
+    (ci_lo, ci_hi), prob_pos = bootstrap_mean_ci(excess, iters=boots, seed=42)
+
+    # Daily statistics
+    daily_mean_rp = float(daily_rp.mean())
+    daily_std_rp = float(daily_rp.std(ddof=1))
+    daily_mean_rb = float(daily_rb.mean())
+    daily_std_rb = float(daily_rb.std(ddof=1))
+    daily_mean_ex = float(daily_excess.mean())
+    daily_std_ex = float(daily_excess.std(ddof=1))
+    
+    daily_rf = rf_annual / 365
+    daily_sharpe_ann = (daily_mean_rp - daily_rf) / daily_std_rp * math.sqrt(365) if daily_std_rp > 0 else float('nan')
+    daily_ir_ann = daily_mean_ex / daily_std_ex * math.sqrt(365) if daily_std_ex > 0 else float('nan')
+
+    daily_t_stat, daily_df, daily_p_val = ttest_two_sided_mean_gt_zero(daily_excess)
+    (daily_ci_lo, daily_ci_hi), daily_prob_pos = bootstrap_mean_ci(daily_excess, iters=boots, seed=42)
+
+    daily_mdd_rp = max_drawdown(daily_rp)
+    daily_mdd_rb = max_drawdown(daily_rb)
+
+    return {
+        "period": {
+            "start": start.isoformat() if hasattr(start, 'isoformat') else str(start),
+            "end": end.isoformat() if hasattr(end, 'isoformat') else str(end),
+            "weeks": n,
+            "days": n_daily
+        },
+        "risk_free_rate": {
+            "annual": rf_annual,
+            "weekly": rf_w,
+            "daily": daily_rf
+        },
+        "daily_returns": {
+            "portfolio": {
+                "mean": daily_mean_rp,
+                "std": daily_std_rp,
+                "sharpe_annualized": daily_sharpe_ann,
+                "max_drawdown": daily_mdd_rp
+            },
+            "benchmark": {
+                "mean": daily_mean_rb,
+                "std": daily_std_rb,
+                "max_drawdown": daily_mdd_rb
+            },
+            "excess": {
+                "mean": daily_mean_ex,
+                "std": daily_std_ex,
+                "information_ratio_annualized": daily_ir_ann
+            }
+        },
+        "weekly_returns": {
+            "portfolio": {
+                "mean": mean_rp,
+                "std": std_rp,
+                "sharpe_annualized": sharpe_ann,
+                "max_drawdown": mdd_rp
+            },
+            "benchmark": {
+                "mean": mean_rb,
+                "std": std_rb,
+                "max_drawdown": mdd_rb
+            },
+            "excess": {
+                "mean": mean_ex,
+                "std": std_ex,
+                "information_ratio_annualized": ir_ann
+            }
+        },
+        "cumulative_performance": {
+            "portfolio": cum_rp,
+            "benchmark": cum_rb,
+            "outperformance": cum_ex
+        },
+        "win_rate": win_rate,
+        "statistical_tests": {
+            "daily": {
+                "t_statistic": daily_t_stat,
+                "degrees_freedom": daily_df,
+                "p_value": daily_p_val,
+                "bootstrap_ci": [daily_ci_lo, daily_ci_hi],
+                "probability_positive": daily_prob_pos
+            },
+            "weekly": {
+                "t_statistic": t_stat,
+                "degrees_freedom": df,
+                "p_value": p_val,
+                "bootstrap_ci": [ci_lo, ci_hi],
+                "probability_positive": prob_pos
+            }
+        },
+        "recent_performance": {
+            "last_10_days": [
+                {
+                    "date": daily_dates[i] if i < len(daily_dates) else None,
+                    "portfolio_return": daily_rp[i] if i < len(daily_rp) else None,
+                    "benchmark_return": daily_rb[i] if i < len(daily_rb) else None,
+                    "excess_return": (daily_rp[i] - daily_rb[i]) if i < len(daily_rp) and i < len(daily_rb) else None
+                }
+                for i in range(max(0, len(daily_rp) - 10), len(daily_rp))
+            ],
+            "last_6_weeks": [
+                {
+                    "date": dates[i] if i < len(dates) else None,
+                    "portfolio_return": rp[i] if i < len(rp) else None,
+                    "benchmark_return": rb[i] if i < len(rb) else None,
+                    "excess_return": (rp[i] - rb[i]) if i < len(rp) and i < len(rb) else None
+                }
+                for i in range(max(0, len(rp) - 6), len(rp))
+            ]
+        }
+    }
+
+@app.route("/api/performance/summary", methods=["GET"])
+def api_performance_summary():
+    """Get a comprehensive performance summary"""
+    error_response = check_database_configured()
+    if error_response:
+        return error_response
+    
+    try:
+        # Get query parameters
+        since = request.args.get('since')
+        weeks = request.args.get('weeks', type=int)
+        rf_annual = request.args.get('rf_annual', type=float)  # None if not provided
+        boots = request.args.get('boots', 10000, type=int)
+        
+        with engine.connect() as conn:
+            stats = calculate_performance_stats(conn, since, weeks, rf_annual, boots)
+            
+        if "error" in stats:
+            return jsonify({"status": "error", "error": stats["error"]}), 400
+            
+        return jsonify({
+            "status": "ok",
+            "performance": stats
+        })
+        
+    except Exception as e:
+        print(f"Error calculating performance stats: {e}")
+        return jsonify({"status": "error", "error": str(e)}), 500
+
+@app.route("/api/performance/quick", methods=["GET"])
+def api_performance_quick():
+    """Get quick performance metrics for dashboard display"""
+    error_response = check_database_configured()
+    if error_response:
+        return error_response
+    
+    try:
+        with engine.connect() as conn:
+            stats = calculate_performance_stats(conn, since=None, weeks=4, rf_annual=None, boots=1000)
+            
+        if "error" in stats:
+            return jsonify({"status": "error", "error": stats["error"]}), 400
+        
+        # Extract key metrics for quick display
+        quick_stats = {
+            "period": stats["period"],
+            "cumulative_performance": stats["cumulative_performance"],
+            "daily_returns": {
+                "portfolio_mean": stats["daily_returns"]["portfolio"]["mean"],
+                "benchmark_mean": stats["daily_returns"]["benchmark"]["mean"],
+                "excess_mean": stats["daily_returns"]["excess"]["mean"]
+            },
+            "risk_metrics": {
+                "portfolio_sharpe": stats["daily_returns"]["portfolio"]["sharpe_annualized"],
+                "information_ratio": stats["daily_returns"]["excess"]["information_ratio_annualized"],
+                "portfolio_max_dd": stats["daily_returns"]["portfolio"]["max_drawdown"],
+                "benchmark_max_dd": stats["daily_returns"]["benchmark"]["max_drawdown"]
+            },
+            "win_rate": stats["win_rate"],
+            "significance": {
+                "p_value": stats["statistical_tests"]["daily"]["p_value"],
+                "probability_positive": stats["statistical_tests"]["daily"]["probability_positive"]
+            },
+            "recent_performance": stats["recent_performance"]["last_10_days"][-5:]  # Last 5 days
+        }
+            
+        return jsonify({
+            "status": "ok",
+            "quick_stats": quick_stats
+        })
+        
+    except Exception as e:
+        print(f"Error calculating quick performance stats: {e}")
+        return jsonify({"status": "error", "error": str(e)}), 500
+
+@app.route("/api/treasury-rate", methods=["GET"])
+def api_treasury_rate():
+    """Get current treasury rate from FMP API"""
+    try:
+        treasury_rate = fetch_treasury_rates()
+        return jsonify({
+            "status": "ok",
+            "treasury_rate": treasury_rate,
+            "treasury_rate_percent": treasury_rate * 100
+        })
+    except Exception as e:
+        print(f"Error fetching treasury rate: {e}")
         return jsonify({"status": "error", "error": str(e)}), 500
 
 # ============================================================================
