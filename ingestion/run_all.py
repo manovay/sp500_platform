@@ -7,7 +7,7 @@ from sqlalchemy import create_engine, text
 
 """
 What it does: Runs all data fetching scripts in the correct order, with appropriate frequency checks and error handling.
-How it works: Loops through each script, checks if it should run based on frequency and last_run_date, calls the fetch function, and updates the last_run_date.
+How it  works: Loops through each script, checks if it should run based on frequency and last_run_date, calls the fetch function, and updates the last_run_date.
 It also runs the run_trades script after all data fetching is complete.
 Data storage: Updates the ingestion_metadata table with the last_run_date for each script.
 """
