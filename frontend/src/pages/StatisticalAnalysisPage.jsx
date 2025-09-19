@@ -116,7 +116,7 @@ export default function StatisticalAnalysisPage() {
         
         <div className="chart-content">
           {chartTab === 'days' ? (
-            <div className="performance-chart">
+            <div className="performance-chart daily-chart">
               <h2 className="text-center">Daily Performance vs SPY</h2>
               <div className="chart-y-axis">
                 <div className="y-axis-label">1%</div>
@@ -136,17 +136,17 @@ export default function StatisticalAnalysisPage() {
                 </div>
               </div>
               <div className="line-chart">
-                <svg className="chart-svg" viewBox="0 0 1000 600" preserveAspectRatio="xMidYMid meet">
+                <svg className="chart-svg" viewBox="0 0 1000 800" preserveAspectRatio="xMidYMid meet">
                   {/* Grid lines */}
                   <defs>
-                    <pattern id="grid" width="100" height="80" patternUnits="userSpaceOnUse">
-                      <path d="M 100 0 L 0 0 0 80" fill="none" stroke="rgba(55, 65, 81, 0.1)" strokeWidth="1"/>
+                    <pattern id="grid" width="100" height="100" patternUnits="userSpaceOnUse">
+                      <path d="M 100 0 L 0 0 0 100" fill="none" stroke="rgba(55, 65, 81, 0.75)" strokeWidth="1"/>
                     </pattern>
                   </defs>
                   <rect width="100%" height="100%" fill="url(#grid)" />
                   
                   {/* Zero line */}
-                  <line x1="100" y1="250" x2="900" y2="250" stroke="var(--border)" strokeWidth="2"/>
+                  <line x1="100" y1="400" x2="900" y2="400" stroke="var(--border)" strokeWidth="4"/>
                   
                   {/* Performance lines */}
                   {(() => {
@@ -178,8 +178,8 @@ export default function StatisticalAnalysisPage() {
                       // Ensure we have valid numbers
                       const portfolioReturn = typeof day.portfolio_return === 'number' ? day.portfolio_return : 0;
                       const benchmarkReturn = typeof day.benchmark_return === 'number' ? day.benchmark_return : 0;
-                      const portfolioY = 250 - (portfolioReturn * 20000);
-                      const benchmarkY = 250 - (benchmarkReturn * 20000);
+                      const portfolioY = 400 - (portfolioReturn * 20000);
+                      const benchmarkY = 400 - (benchmarkReturn * 20000);
                       
                       // Debug: Log the scaling calculations
                       console.log(`Day ${index}:`, {
@@ -220,11 +220,62 @@ export default function StatisticalAnalysisPage() {
                         {/* Data points */}
                         {points.map((point, index) => (
                           <g key={index}>
-                            <circle cx={point.x} cy={point.portfolioY} r="4" fill="var(--primary)" stroke="white" strokeWidth="2"/>
-                            <circle cx={point.x} cy={point.benchmarkY} r="4" fill="var(--muted)" stroke="white" strokeWidth="2"/>
-                            <text x={point.x} y="480" textAnchor="middle" fontSize="12" fill="var(--muted)">
+                            <circle cx={point.x} cy={point.portfolioY} r="4" fill="var(--primary)" stroke="white" strokeWidth="2" style={{ cursor: 'pointer' }}/>
+                            <circle cx={point.x} cy={point.benchmarkY} r="4" fill="var(--muted)" stroke="white" strokeWidth="2" style={{ cursor: 'pointer' }}/>
+                            <text x={point.x} y="680" textAnchor="middle" fontSize="16" fill="var(--muted)">
                               {new Date(point.day.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
                             </text>
+                            {/* Hover tooltip */}
+                            <g className="hover-group" style={{ cursor: 'pointer' }}>
+                              <rect 
+                                x={point.x - 120} 
+                                y={point.portfolioY - 100} 
+                                width="240" 
+                                height="80" 
+                                fill="rgba(0, 0, 0, 0.95)" 
+                                rx="12" 
+                                stroke="var(--border)"
+                                strokeWidth="2"
+                                style={{ opacity: 0, transition: 'opacity 0.2s' }}
+                                className="tooltip-bg"
+                              />
+                              <text 
+                                x={point.x} 
+                                y={point.portfolioY - 75} 
+                                textAnchor="middle" 
+                                fontSize="16" 
+                                fill={point.day.portfolio_return >= 0 ? "var(--success)" : "var(--danger)"}
+                                fontWeight="700"
+                                style={{ opacity: 0, transition: 'opacity 0.2s' }}
+                                className="tooltip-text"
+                              >
+                                OracleZero: {formatPercentage(point.day.portfolio_return, 2, true)}
+                              </text>
+                              <text 
+                                x={point.x} 
+                                y={point.portfolioY - 50} 
+                                textAnchor="middle" 
+                                fontSize="16" 
+                                fill={point.day.benchmark_return >= 0 ? "var(--success)" : "var(--danger)"}
+                                fontWeight="700"
+                                style={{ opacity: 0, transition: 'opacity 0.2s' }}
+                                className="tooltip-text"
+                              >
+                                SPY: {formatPercentage(point.day.benchmark_return, 2, true)}
+                              </text>
+                              <text 
+                                x={point.x} 
+                                y={point.portfolioY - 25} 
+                                textAnchor="middle" 
+                                fontSize="16" 
+                                fill={point.day.excess_return >= 0 ? "var(--success)" : "var(--danger)"}
+                                fontWeight="700"
+                                style={{ opacity: 0, transition: 'opacity 0.2s' }}
+                                className="tooltip-text"
+                              >
+                                Δ: {formatPercentage(point.day.excess_return, 2, true)}
+                              </text>
+                            </g>
                           </g>
                         ))}
                       </>
@@ -234,7 +285,7 @@ export default function StatisticalAnalysisPage() {
               </div>
             </div>
           ) : (
-            <div className="performance-chart">
+            <div className="performance-chart weekly-chart">
               <h2 className="text-center">Weekly Performance vs SPY</h2>
               <div className="chart-y-axis">
                 <div className="y-axis-label">2.5%</div>
@@ -256,17 +307,17 @@ export default function StatisticalAnalysisPage() {
                 </div>
               </div>
               <div className="line-chart">
-                <svg className="chart-svg" viewBox="0 0 1000 600" preserveAspectRatio="xMidYMid meet">
+                <svg className="chart-svg" viewBox="0 0 1000 800" preserveAspectRatio="xMidYMid meet">
                   {/* Grid lines */}
                   <defs>
-                    <pattern id="grid" width="100" height="80" patternUnits="userSpaceOnUse">
-                      <path d="M 100 0 L 0 0 0 80" fill="none" stroke="rgba(55, 65, 81, 0.1)" strokeWidth="1"/>
+                    <pattern id="grid" width="100" height="100" patternUnits="userSpaceOnUse">
+                      <path d="M 100 0 L 0 0 0 100" fill="none" stroke="rgba(55, 65, 81, 0.75)" strokeWidth="1"/>
                     </pattern>
                   </defs>
                   <rect width="100%" height="100%" fill="url(#grid)" />
                   
                   {/* Zero line */}
-                  <line x1="100" y1="300" x2="900" y2="300" stroke="var(--border)" strokeWidth="2"/>
+                  <line x1="100" y1="400" x2="900" y2="400" stroke="var(--border)" strokeWidth="4"/>
                   
                   {/* Performance lines */}
                   {(() => {
@@ -281,8 +332,8 @@ export default function StatisticalAnalysisPage() {
                     const yMin = -0.005; // -0.5%
                     const yMax = 0.025;  // 2.5%
                     const yRange = yMax - yMin; // 0.03 (3%)
-                    const yScale = 300 / yRange; // Scale to fit 300px height
-                    const yCenter = 300; // Center Y position
+                    const yScale = 400 / yRange; // Scale to fit 400px height
+                    const yCenter = 400; // Center Y position
                     
                     const points = tradingWeeks.map((week, index) => {
                       // Handle division by zero when there's only one point
@@ -290,8 +341,8 @@ export default function StatisticalAnalysisPage() {
                       // Scale returns to fit the fixed range
                       const portfolioReturn = typeof week.portfolio_return === 'number' ? week.portfolio_return : 0;
                       const benchmarkReturn = typeof week.benchmark_return === 'number' ? week.benchmark_return : 0;
-                      const portfolioY = Math.max(50, Math.min(550, yCenter - ((portfolioReturn - yMin) * yScale)));
-                      const benchmarkY = Math.max(50, Math.min(550, yCenter - ((benchmarkReturn - yMin) * yScale)));
+                      const portfolioY = Math.max(50, Math.min(750, yCenter - ((portfolioReturn - yMin) * yScale)));
+                      const benchmarkY = Math.max(50, Math.min(750, yCenter - ((benchmarkReturn - yMin) * yScale)));
                       
                       return { x, portfolioY, benchmarkY, week };
                     });
@@ -324,11 +375,62 @@ export default function StatisticalAnalysisPage() {
                         {/* Data points */}
                         {points.map((point, index) => (
                           <g key={index}>
-                            <circle cx={point.x} cy={point.portfolioY} r="4" fill="var(--primary)" stroke="white" strokeWidth="2"/>
-                            <circle cx={point.x} cy={point.benchmarkY} r="4" fill="var(--muted)" stroke="white" strokeWidth="2"/>
-                            <text x={point.x} y="480" textAnchor="middle" fontSize="12" fill="var(--muted)">
+                            <circle cx={point.x} cy={point.portfolioY} r="4" fill="var(--primary)" stroke="white" strokeWidth="2" style={{ cursor: 'pointer' }}/>
+                            <circle cx={point.x} cy={point.benchmarkY} r="4" fill="var(--muted)" stroke="white" strokeWidth="2" style={{ cursor: 'pointer' }}/>
+                            <text x={point.x} y="680" textAnchor="middle" fontSize="16" fill="var(--muted)">
                               {new Date(point.week.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
                             </text>
+                            {/* Hover tooltip */}
+                            <g className="hover-group" style={{ cursor: 'pointer' }}>
+                              <rect 
+                                x={point.x - 120} 
+                                y={point.portfolioY - 100} 
+                                width="240" 
+                                height="80" 
+                                fill="rgba(0, 0, 0, 0.95)" 
+                                rx="12" 
+                                stroke="var(--border)"
+                                strokeWidth="2"
+                                style={{ opacity: 0, transition: 'opacity 0.2s' }}
+                                className="tooltip-bg"
+                              />
+                              <text 
+                                x={point.x} 
+                                y={point.portfolioY - 75} 
+                                textAnchor="middle" 
+                                fontSize="16" 
+                                fill={point.week.portfolio_return >= 0 ? "var(--success)" : "var(--danger)"}
+                                fontWeight="700"
+                                style={{ opacity: 0, transition: 'opacity 0.2s' }}
+                                className="tooltip-text"
+                              >
+                                OracleZero: {formatPercentage(point.week.portfolio_return, 2, true)}
+                              </text>
+                              <text 
+                                x={point.x} 
+                                y={point.portfolioY - 50} 
+                                textAnchor="middle" 
+                                fontSize="16" 
+                                fill={point.week.benchmark_return >= 0 ? "var(--success)" : "var(--danger)"}
+                                fontWeight="700"
+                                style={{ opacity: 0, transition: 'opacity 0.2s' }}
+                                className="tooltip-text"
+                              >
+                                SPY: {formatPercentage(point.week.benchmark_return, 2, true)}
+                              </text>
+                              <text 
+                                x={point.x} 
+                                y={point.portfolioY - 25} 
+                                textAnchor="middle" 
+                                fontSize="16" 
+                                fill={point.week.excess_return >= 0 ? "var(--success)" : "var(--danger)"}
+                                fontWeight="700"
+                                style={{ opacity: 0, transition: 'opacity 0.2s' }}
+                                className="tooltip-text"
+                              >
+                                Δ: {formatPercentage(point.week.excess_return, 2, true)}
+                              </text>
+                            </g>
                           </g>
                         ))}
                       </>

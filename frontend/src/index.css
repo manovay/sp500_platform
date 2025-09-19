@@ -914,7 +914,7 @@ input::placeholder {
 .chart-tabs {
   display: flex;
   gap: var(--space-sm);
-  margin-bottom: var(--space-lg);
+  margin-bottom: var(--space-sm);
   border-bottom: 1px solid var(--border);
 }
 
@@ -939,38 +939,50 @@ input::placeholder {
 }
 
 .chart-content {
-  min-height: 550px;
+  min-height: 720px;
   position: relative;
+  padding: var(--space-xs);
 }
 
 .performance-chart {
   position: relative;
   display: flex;
   flex-direction: column;
+  padding: 0;
 }
 
 .performance-chart h3 {
   font-size: 1.125rem;
   font-weight: 600;
   color: var(--text);
-  margin-bottom: var(--space-lg);
+  margin-bottom: var(--space-sm);
   text-align: center;
 }
 
 .chart-y-axis {
   position: absolute;
   left: 10px;
-  top: 0;
-  bottom: 0;
+  top: 80px;
+  bottom: 20px;
   width: 40px;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
   align-items: flex-end;
-  padding: var(--space-lg) 5px;
+  padding: var(--space-md) 5px;
   z-index: 2;
   background: transparent;
   pointer-events: none;
+}
+
+/* Daily chart Y-axis positioning */
+.daily-chart .chart-y-axis {
+  top: 80px;
+}
+
+/* Weekly chart Y-axis positioning */
+.weekly-chart .chart-y-axis {
+  top: 0px;
 }
 
 .y-axis-label {
@@ -1096,7 +1108,7 @@ input::placeholder {
 /* Line Chart Styles */
 .line-chart {
   width: 100%;
-  height: 500px;
+  height: 700px;
   margin-left: 0;
   background: var(--surface);
   border-radius: var(--radius);
@@ -1128,12 +1140,18 @@ input::placeholder {
   stroke-width: 3;
 }
 
+/* Interactive tooltips */
+.hover-group:hover .tooltip-bg,
+.hover-group:hover .tooltip-text {
+  opacity: 1 !important;
+}
+
 /* Chart Legend */
 .chart-legend {
   display: flex;
-  gap: var(--space-lg);
+  gap: var(--space-sm);
   justify-content: center;
-  margin-bottom: var(--space-md);
+  margin-bottom: var(--space-xs);
   margin-left: 60px;
 }
 
