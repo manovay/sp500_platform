@@ -31,7 +31,7 @@ FETCH_MODULES = [
     ("fetch_historical_analyst", "grades_historical"),
     ("fetch_stock_news", "stock_news"),
     ("fetch_weekly_llm", "weekly_llm_data"),  # New weekly LLM module
-    ("fetch_daily_snapshots", "nav_weekly"),  # Daily portfolio and benchmark snapshots
+    ("fetch_daily_snapshots", "manual"),  # Daily portfolio and benchmark snapshots (manual - runs when run_all.py runs)
     ("run_trades", "actual_portfolio_allocations")  # Trading execution module
 ]
 
@@ -70,6 +70,10 @@ def get_meta_info():
 def should_run_script(frequency, last_run_date):
     """Simple scheduling - you can add smart scheduling later"""
     if last_run_date is None:
+        return True
+    
+    # Manual scripts always run
+    if frequency == "manual":
         return True
     
     try:
@@ -120,7 +124,11 @@ def main():
             try:
                 print(f"\n[{datetime.now().isoformat()}] --- Running {script}.py (frequency: {freq}, last_run_date: {last_run}) ---")
                 module = importlib.import_module(script)
-                from_date = last_run if last_run else (date.today() - timedelta(days=365*3)).isoformat()
+                # For manual scripts, use 7 days. For others, use last_run or 3 years
+                if freq == "manual":
+                    from_date = (date.today() - timedelta(days=7)).isoformat()
+                else:
+                    from_date = last_run if last_run else (date.today() - timedelta(days=365*3)).isoformat()
                 print(f"[{datetime.now().isoformat()}] Calling fetch(from_date={from_date}) for {script}...")
                 module.fetch(from_date)
                 update_last_run_date(script)

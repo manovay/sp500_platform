@@ -8,6 +8,7 @@ from datetime import date, timedelta, datetime
 import requests
 import re
 import statistics
+import psycopg2
 
 # Alpaca imports
 from alpaca.trading.client import TradingClient
@@ -458,7 +459,7 @@ def api_positions():
 
 @app.route("/api/history", methods=["GET"])
 def api_history():
-    """Get portfolio history"""
+    """Get portfolio history using real historical data from nav_weekly table"""
     timeframe = request.args.get('timeframe', 'ytd')
     
     error_response = check_alpaca_configured()
@@ -469,10 +470,8 @@ def api_history():
         # Get current account information
         account = trading_client.get_account()
         current_equity = float(account.equity)
-        current_cash = float(account.cash)
-        account_created = account.created_at
         
-        # Determine the actual start date based on timeframe
+        # Determine start date based on timeframe
         end_date = datetime.now()
         
         if timeframe == 'ytd':
@@ -486,54 +485,41 @@ def api_history():
         else:
             start_date = datetime(end_date.year, 1, 1)
         
-        # For a new account, create a simple linear progression from initial cash to current equity
-        equity_data = []
+        # Query nav_weekly table for historical data
+        with psycopg2.connect(DATABASE_URL) as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT week_start_date, equity 
+                    FROM nav_weekly 
+                    WHERE week_start_date >= %s AND week_start_date <= %s
+                    ORDER BY week_start_date
+                """, (start_date.date(), end_date.date()))
+                
+                historical_data = cur.fetchall()
         
-        if start_date >= end_date:
-            # If start date is today or in the future, just show current equity
+        if not historical_data:
+            return jsonify({
+                "status": "error", 
+                "error": f"No historical data for {timeframe}. Run: python 'ingestion/util scripts/test_nav_data.py' to check data availability."
+            }), 400
+        
+        # Build chart data
+        equity_data = []
+        for date, equity in historical_data:
+            equity_data.append({
+                "date": date.isoformat() + "T00:00:00Z",
+                "equity": round(float(equity), 2)
+            })
+        
+        # Add current equity if not already included
+        if not equity_data or equity_data[-1]["date"][:10] != end_date.date().isoformat():
             equity_data.append({
                 "date": end_date.isoformat() + "Z",
                 "equity": round(current_equity, 2)
             })
-        else:
-            # Create daily data points from start to end
-            current_date = start_date
-            days_between = (end_date - start_date).days
-            
-            if days_between == 0:
-                # Same day, just show current equity
-                equity_data.append({
-                    "date": end_date.isoformat() + "Z",
-                    "equity": round(current_equity, 2)
-                })
-            else:
-                # Use the actual starting equity of $100,000
-                starting_equity = 100000.0
-                
-                while current_date <= end_date:
-                    # Skip weekends
-                    if current_date.weekday() < 5:  # Monday = 0, Friday = 4
-                        # Linear interpolation from start to current equity
-                        progress = (current_date - start_date).days / days_between
-                        progress = min(1.0, max(0.0, progress))  # Clamp between 0 and 1
-                        
-                        # For the last data point, use the real current equity
-                        if current_date == end_date:
-                            daily_equity = current_equity
-                        else:
-                            daily_equity = starting_equity + (current_equity - starting_equity) * progress
-                        
-                        equity_data.append({
-                            "date": current_date.isoformat() + "Z",
-                            "equity": round(daily_equity, 2)
-                        })
-                    
-                    current_date += timedelta(days=1)
         
-        # Calculate KPIs using $100,000 as the starting point
-        start_equity = 100000.0
-        current_equity = float(account.equity)
-            
+        # Calculate KPIs from actual data
+        start_equity = float(historical_data[0][1])
         ytd_pl = current_equity - start_equity
         ytd_return = (ytd_pl / start_equity) * 100 if start_equity > 0 else 0
         
@@ -547,6 +533,12 @@ def api_history():
                 "ytd_return": round(ytd_return, 2)
             }
         })
+        
+    except psycopg2.Error as db_error:
+        return jsonify({
+            "status": "error", 
+            "error": f"Database error: {str(db_error)}"
+        }), 500
     except Exception as e:
         print(f"Error fetching portfolio history: {e}")
         return jsonify({"status": "error", "error": str(e)}), 500

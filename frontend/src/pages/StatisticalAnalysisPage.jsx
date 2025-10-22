@@ -569,6 +569,61 @@ export default function StatisticalAnalysisPage() {
                   {formatNumber(performanceData.statistical_tests?.weekly?.p_value, 4)}
                 </td>
               </tr>
+              <tr>
+                <td className="metric-name">
+                  <div className="metric-title">Information Ratio</div>
+                  <div className="metric-desc">Excess return per unit of tracking error</div>
+                </td>
+                <td className="spy-value">—</td>
+                <td className="oz-value">—</td>
+                <td className={`delta-value ${(performanceData.daily_returns?.excess?.information_ratio_annualized || 0) >= 0 ? 'positive' : 'negative'}`}>
+                  {formatNumber(performanceData.daily_returns?.excess?.information_ratio_annualized, 3, true)}
+                </td>
+              </tr>
+              <tr>
+                <td className="metric-name">
+                  <div className="metric-title">Win Rate</div>
+                  <div className="metric-desc">Percentage of periods outperforming SPY</div>
+                </td>
+                <td className="spy-value">—</td>
+                <td className="oz-value">—</td>
+                <td className={`delta-value ${(performanceData.win_rate || 0) >= 0.5 ? 'positive' : 'negative'}`}>
+                  {formatPercentage(performanceData.win_rate, 1)}
+                </td>
+              </tr>
+              <tr>
+                <td className="metric-name">
+                  <div className="metric-title">Bootstrap Probability</div>
+                  <div className="metric-desc">Probability that mean excess return &gt; 0</div>
+                </td>
+                <td className="spy-value">—</td>
+                <td className="oz-value">—</td>
+                <td className={`delta-value ${(performanceData.statistical_tests?.daily?.probability_positive || 0) >= 0.5 ? 'positive' : 'negative'}`}>
+                  {formatPercentage(performanceData.statistical_tests?.daily?.probability_positive, 1)}
+                </td>
+              </tr>
+              <tr>
+                <td className="metric-name">
+                  <div className="metric-title">T-Statistic</div>
+                  <div className="metric-desc">Statistical test value for significance</div>
+                </td>
+                <td className="spy-value">—</td>
+                <td className="oz-value">—</td>
+                <td className={`delta-value ${(performanceData.statistical_tests?.daily?.t_statistic || 0) >= 0 ? 'positive' : 'negative'}`}>
+                  {formatNumber(performanceData.statistical_tests?.daily?.t_statistic, 3, true)}
+                </td>
+              </tr>
+              <tr>
+                <td className="metric-name">
+                  <div className="metric-title">Bootstrap CI</div>
+                  <div className="metric-desc">95% confidence interval for mean excess return</div>
+                </td>
+                <td className="spy-value">—</td>
+                <td className="oz-value">—</td>
+                <td className="delta-value">
+                  [{formatPercentage(performanceData.statistical_tests?.daily?.bootstrap_ci?.[0], 2)}, {formatPercentage(performanceData.statistical_tests?.daily?.bootstrap_ci?.[1], 2)}]
+                </td>
+              </tr>
             </tbody>
           </table>
           </div>

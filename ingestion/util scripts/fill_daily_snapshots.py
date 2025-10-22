@@ -24,7 +24,7 @@ ALPACA_KEY = os.getenv("ALPACA_KEY")
 ALPACA_SECRET = os.getenv("ALPACA_SECRET")
 FMP_KEY = os.getenv("FMP_API_KEY")
 ALPACA_BASE = os.getenv("ALPACA_BASE", "https://paper-api.alpaca.markets")  # or live base
-DEFAULT_BACKFILL_DAYS = int(os.getenv("BACKFILL_DAYS", "25"))
+DEFAULT_BACKFILL_DAYS = int(os.getenv("BACKFILL_DAYS", "56"))
 
 if not DB_URL:
     raise SystemExit("Missing DATABASE_URL")
@@ -39,14 +39,29 @@ def to_et(d: dt.datetime) -> dt.datetime:
 def monday_of_week(d_et: dt.datetime) -> dt.date:
     return (d_et - dt.timedelta(days=d_et.weekday())).date()
 
-def daily_keys_between(start_date: dt.date, end_date: dt.date):
-    """All dates (inclusive) between start and end."""
+def is_weekday(date: dt.date) -> bool:
+    """Check if a date is a weekday (Monday=0, Sunday=6)."""
+    return date.weekday() < 5  # Monday=0, Tuesday=1, ..., Friday=4
+
+def daily_keys_between(start_date: dt.date, end_date: dt.date, weekdays_only: bool = True):
+    """All dates (inclusive) between start and end. Optionally skip weekends."""
     d = start_date
     keys = []
     while d <= end_date:
-        keys.append(d)
+        if not weekdays_only or is_weekday(d):
+            keys.append(d)
         d += dt.timedelta(days=1)
     return keys
+
+def get_trading_days_only(start_date: dt.date, end_date: dt.date):
+    """Get only trading days (weekdays) between start and end dates."""
+    trading_days = []
+    current = start_date
+    while current <= end_date:
+        if is_weekday(current):
+            trading_days.append(current)
+        current += dt.timedelta(days=1)
+    return trading_days
 
 # ----------------- Data fetchers -----------------
 def get_alpaca_equity_series(days: int):
@@ -109,7 +124,9 @@ def get_alpaca_equity_series(days: int):
     for ts, eq in zip(stamps, equities):
         d_utc = dt.datetime.utcfromtimestamp(ts).replace(tzinfo=dt.timezone.utc)
         d_et = d_utc.astimezone(NY).date()
-        out.append((d_et, Decimal(str(eq))))
+        # Only include trading days to avoid weekend contamination
+        if is_weekday(d_et):
+            out.append((d_et, Decimal(str(eq))))
 
     coalesced = {}
     for d, eq in out:
@@ -134,36 +151,42 @@ def get_fmp_spy_adj_close(days: int):
     out = []
     for row in hist:
         d = dt.date.fromisoformat(row["date"])
-        adj = Decimal(str(row.get("adjClose", row.get("close"))))
-        out.append((d, adj))
+        # Only include trading days to avoid weekend contamination
+        if is_weekday(d):
+            adj = Decimal(str(row.get("adjClose", row.get("close"))))
+            out.append((d, adj))
     # API returns newest→oldest; sort oldest→newest
     return sorted(out)
 
 # ----------------- DB upserts -----------------
 def upsert_nav_daily(date, equity: Decimal, cash: Decimal, note="backfill or cron"):
     with engine.begin() as conn:
+        # First delete any existing record for this date
+        conn.execute(
+            text("DELETE FROM nav_weekly WHERE week_start_date = :date"),
+            {"date": date}
+        )
+        # Then insert the new record
         conn.execute(
             text("""
             INSERT INTO nav_weekly (week_start_date, as_of_ts, equity, cash, note)
             VALUES (:date, NOW(), :equity, :cash, :note)
-            ON CONFLICT (week_start_date) DO UPDATE
-            SET as_of_ts = EXCLUDED.as_of_ts,
-                equity   = EXCLUDED.equity,
-                cash     = EXCLUDED.cash,
-                note     = EXCLUDED.note
             """),
             {"date": date, "equity": equity, "cash": cash, "note": note},
         )
 
 def upsert_benchmark_daily(date, px_date: dt.date, adj_close: Decimal, symbol="SPY"):
     with engine.begin() as conn:
+        # First delete any existing record for this date and symbol
+        conn.execute(
+            text("DELETE FROM benchmark_weekly WHERE symbol = :sym AND week_start_date = :date"),
+            {"sym": symbol, "date": date}
+        )
+        # Then insert the new record
         conn.execute(
             text("""
             INSERT INTO benchmark_weekly (symbol, week_start_date, px_date, adj_close)
             VALUES (:sym, :date, :pxd, :px)
-            ON CONFLICT (symbol, week_start_date) DO UPDATE
-            SET px_date   = EXCLUDED.px_date,
-                adj_close = EXCLUDED.adj_close
             """),
             {"sym": symbol, "date": date, "pxd": px_date, "px": adj_close},
         )
@@ -327,11 +350,13 @@ def backfill(backfill_days: int):
     now_et = to_et(dt.datetime.now(dt.timezone.utc))
     start_et = now_et - dt.timedelta(days=backfill_days)
 
-    # Build daily keys in range
-    daily_keys = daily_keys_between(start_et.date(), now_et.date())
+    # Build daily keys in range (weekdays only to avoid weekend data contamination)
+    daily_keys = get_trading_days_only(start_et.date(), now_et.date())
     if not daily_keys:
-        print("No days to backfill.")
+        print("No trading days to backfill.")
         return
+    
+    print(f"📅 Processing {len(daily_keys)} trading days (weekends skipped)")
 
     # Fetch historical series once
     alpaca_series = get_alpaca_equity_series(backfill_days)
@@ -389,6 +414,11 @@ def run_today_once():
     # "today" snapshot (no backfill): use current equity and prior trading day SPY
     now_et = to_et(dt.datetime.now(dt.timezone.utc))
     today = now_et.date()
+    
+    # Skip if today is a weekend
+    if not is_weekday(today):
+        print(f"⏭️ Skipping weekend day: {today}")
+        return
 
     # current Alpaca account
     equity, cash = Decimal("0"), Decimal("0")
@@ -418,6 +448,39 @@ def run_today_once():
     compute_and_upsert_daily_return(today)
 
 # ----------------- Safety checks -----------------
+def clean_weekend_data():
+    """
+    Remove any weekend data that might be contaminating p-value calculations.
+    This ensures only trading days are used for statistical analysis.
+    """
+    try:
+        with engine.begin() as conn:
+            # Delete weekend data from nav_weekly
+            weekend_nav_deleted = conn.execute(text("""
+                DELETE FROM nav_weekly 
+                WHERE EXTRACT(DOW FROM week_start_date) IN (0, 6)
+            """)).rowcount
+            
+            # Delete weekend data from benchmark_weekly
+            weekend_bench_deleted = conn.execute(text("""
+                DELETE FROM benchmark_weekly 
+                WHERE EXTRACT(DOW FROM week_start_date) IN (0, 6)
+            """)).rowcount
+            
+            # Delete weekend data from weekly_stats
+            weekend_stats_deleted = conn.execute(text("""
+                DELETE FROM weekly_stats 
+                WHERE EXTRACT(DOW FROM week_start_date) IN (0, 6)
+            """)).rowcount
+            
+            if weekend_nav_deleted > 0 or weekend_bench_deleted > 0 or weekend_stats_deleted > 0:
+                print(f"🧹 Cleaned weekend data: {weekend_nav_deleted} nav records, {weekend_bench_deleted} benchmark records, {weekend_stats_deleted} stats records")
+            else:
+                print("✅ No weekend data found to clean")
+                
+    except Exception as e:
+        print(f"❌ Error cleaning weekend data: {str(e)}")
+
 def check_migration_status():
     """
     Check if the required tables and columns exist before running
@@ -461,12 +524,15 @@ def check_migration_status():
         print(f"❌ Error checking migration status: {str(e)}")
         return False
 
-def main(backfill_days=25):
+def main(backfill_days=44):
     """
     Main function to run daily snapshots.
     Similar to other fetch files - just specify how many days to backfill.
+    
+    NOTE: This script now skips weekends to avoid contaminating p-value calculations
+    with 0% returns from non-trading days.
     """
-    print("🔄 Starting daily snapshots process...")
+    print("🔄 Starting daily snapshots process (weekends skipped)...")
     
     # Check migration status before running
     if not check_migration_status():
@@ -474,6 +540,10 @@ def main(backfill_days=25):
         return False
     
     try:
+        # First, clean any existing weekend data that might contaminate p-values
+        print("🧹 Cleaning existing weekend data...")
+        clean_weekend_data()
+        
         # Run backfill for specified days
         backfill(max(backfill_days, 1))
         print("✅ Daily snapshots completed successfully")

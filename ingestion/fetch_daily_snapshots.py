@@ -29,12 +29,17 @@ engine = create_engine(DB_URL, pool_pre_ping=True)
 def to_et(d: dt.datetime) -> dt.datetime:
     return d.astimezone(NY)
 
+def is_weekday(date: dt.date) -> bool:
+    """Check if a date is a weekday (Monday=0, Sunday=6)."""
+    return date.weekday() < 5  # Monday=0, Tuesday=1, ..., Friday=4
+
 def daily_keys_between(start_date: dt.date, end_date: dt.date):
-    """All dates (inclusive) between start and end."""
+    """All dates (inclusive) between start and end - weekdays only."""
     d = start_date
     keys = []
     while d <= end_date:
-        keys.append(d)
+        if is_weekday(d):  # Only include trading days
+            keys.append(d)
         d += dt.timedelta(days=1)
     return keys
 
@@ -88,7 +93,9 @@ def get_alpaca_equity_series(days: int):
     for ts, eq in zip(stamps, equities):
         d_utc = dt.datetime.utcfromtimestamp(ts).replace(tzinfo=dt.timezone.utc)
         d_et = d_utc.astimezone(NY).date()
-        out.append((d_et, Decimal(str(eq))))
+        # Only include trading days to avoid weekend contamination
+        if is_weekday(d_et):
+            out.append((d_et, Decimal(str(eq))))
 
     coalesced = {}
     for d, eq in out:
@@ -113,36 +120,76 @@ def get_fmp_spy_adj_close(days: int):
     out = []
     for row in hist:
         d = dt.date.fromisoformat(row["date"])
-        adj = Decimal(str(row.get("adjClose", row.get("close"))))
-        out.append((d, adj))
+        # Only include trading days to avoid weekend contamination
+        if is_weekday(d):
+            adj = Decimal(str(row.get("adjClose", row.get("close"))))
+            out.append((d, adj))
     # API returns newest→oldest; sort oldest→newest
     return sorted(out)
+
+# ----------------- Weekend data cleaning -----------------
+def clean_weekend_data():
+    """
+    Remove any weekend data that might be contaminating p-value calculations.
+    This ensures only trading days are used for statistical analysis.
+    """
+    try:
+        with engine.begin() as conn:
+            # Delete weekend data from nav_weekly
+            weekend_nav_deleted = conn.execute(text("""
+                DELETE FROM nav_weekly 
+                WHERE EXTRACT(DOW FROM week_start_date) IN (0, 6)
+            """)).rowcount
+            
+            # Delete weekend data from benchmark_weekly
+            weekend_bench_deleted = conn.execute(text("""
+                DELETE FROM benchmark_weekly 
+                WHERE EXTRACT(DOW FROM week_start_date) IN (0, 6)
+            """)).rowcount
+            
+            # Delete weekend data from weekly_stats
+            weekend_stats_deleted = conn.execute(text("""
+                DELETE FROM weekly_stats 
+                WHERE EXTRACT(DOW FROM week_start_date) IN (0, 6)
+            """)).rowcount
+            
+            if weekend_nav_deleted > 0 or weekend_bench_deleted > 0 or weekend_stats_deleted > 0:
+                print(f"🧹 Cleaned weekend data: {weekend_nav_deleted} nav records, {weekend_bench_deleted} benchmark records, {weekend_stats_deleted} stats records")
+            else:
+                print("✅ No weekend data found to clean")
+                
+    except Exception as e:
+        print(f"❌ Error cleaning weekend data: {str(e)}")
 
 # ----------------- DB upserts -----------------
 def upsert_nav_daily(date, equity: Decimal, cash: Decimal, note="daily fetch"):
     with engine.begin() as conn:
+        # First delete any existing record for this date
+        conn.execute(
+            text("DELETE FROM nav_weekly WHERE week_start_date = :date"),
+            {"date": date}
+        )
+        # Then insert the new record
         conn.execute(
             text("""
             INSERT INTO nav_weekly (week_start_date, as_of_ts, equity, cash, note)
             VALUES (:date, NOW(), :equity, :cash, :note)
-            ON CONFLICT (week_start_date) DO UPDATE
-            SET as_of_ts = EXCLUDED.as_of_ts,
-                equity   = EXCLUDED.equity,
-                cash     = EXCLUDED.cash,
-                note     = EXCLUDED.note
             """),
             {"date": date, "equity": equity, "cash": cash, "note": note},
         )
 
 def upsert_benchmark_daily(date, px_date: dt.date, adj_close: Decimal, symbol="SPY"):
     with engine.begin() as conn:
+        # First delete any existing record for this date and symbol
+        conn.execute(
+            text("DELETE FROM benchmark_weekly WHERE symbol = :sym AND week_start_date = :date"),
+            {"sym": symbol, "date": date}
+        )
+        # Then insert the new record
         conn.execute(
             text("""
             INSERT INTO benchmark_weekly (symbol, week_start_date, px_date, adj_close)
             VALUES (:sym, :date, :pxd, :px)
-            ON CONFLICT (symbol, week_start_date) DO UPDATE
-            SET px_date   = EXCLUDED.px_date,
-                adj_close = EXCLUDED.adj_close
             """),
             {"sym": symbol, "date": date, "pxd": px_date, "px": adj_close},
         )
@@ -153,6 +200,10 @@ def fetch(from_date):
     Fetches daily portfolio and benchmark data for the specified date range.
     """
     print(f"🔄 Starting daily snapshots fetch from {from_date}...")
+    
+    # First, clean any existing weekend data that might contaminate p-values
+    print("🧹 Cleaning existing weekend data...")
+    clean_weekend_data()
     
     # Parse from_date
     if isinstance(from_date, str):
