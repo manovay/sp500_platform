@@ -340,7 +340,7 @@ DATA:
 
 Please produce the JSON response.[/INST]"""
 
-    print(f"📊 Prompt statistics:")
+    print(f"Prompt statistics:")
     print(f"   Total prompt length: {len(prompt)} characters")
     print(f"   Data JSON length: {len(data_json)} characters")
     
@@ -446,11 +446,11 @@ def create_default_json_response(ticker, text):
             "reasoning": reasoning
         }
         
-        print(f"🔧 Created default JSON response: {default_response}")
+        print(f"Created default JSON response: {default_response}")
         return default_response
         
     except Exception as e:
-        print(f"❌ Error creating default response: {e}")
+        print(f"Error creating default response: {e}")
         # Ultimate fallback
         return {
             "ticker": ticker,
@@ -551,18 +551,18 @@ def extract_llm_response(resp):
             
             try:
                 parsed_json = json.loads(fixed_json)
-                print(f"✅ Successfully parsed JSON: {fixed_json}")
+                print(f"Successfully parsed JSON: {fixed_json}")
                 
                 # Divide new_alloc_pct by S (100) to convert back to decimal form
                 S = 100
                 if 'new_alloc_pct' in parsed_json and isinstance(parsed_json['new_alloc_pct'], (int, float)):
                     original_value = parsed_json['new_alloc_pct']
                     parsed_json['new_alloc_pct'] = parsed_json['new_alloc_pct'] / S
-                    print(f"✅ Scaled new_alloc_pct from {original_value} to {parsed_json['new_alloc_pct']} (divided by {S})")
+                    print(f"Scaled new_alloc_pct from {original_value} to {parsed_json['new_alloc_pct']} (divided by {S})")
                 
                 return parsed_json
             except json.JSONDecodeError as e:
-                print(f"❌ JSON parsing failed: {e}")
+                print(f"JSON parsing failed: {e}")
                 print(f"Attempted to parse: {fixed_json}")
                 
                 # Try to extract ticker from the response for the default function
@@ -572,7 +572,7 @@ def extract_llm_response(resp):
                 # Create default JSON response
                 return create_default_json_response(ticker, text)
 
-        print(f"❌ No JSON found in response: {text}")
+        print(f"No JSON found in response: {text}")
         return create_default_json_response("UNKNOWN", text)
         
     except Exception as e:
@@ -602,9 +602,9 @@ def save_to_database(ticker, response_data=None, status='pending'):
         )
         session.add(llm_data)
         session.commit()
-        print(f"✅ Saved LLM data for {ticker} to database")
+        print(f"Saved LLM data for {ticker} to database")
     except Exception as e:
-        print(f"❌ Error saving to database: {e}")
+        print(f"Error saving to database: {e}")
         session.rollback()
     finally:
         session.close()
@@ -631,46 +631,46 @@ def process_ticker(ticker, conn):
     print(f"{'='*80}")
     
     # Call Render endpoint
-    print(f"\n🌐 Calling Render endpoint for {ticker}...")
+    print(f"\nCalling Render endpoint for {ticker}...")
     response = call_render_endpoint(prompt)
     
     if response:
-        print(f"✅ Received initial response for {ticker}:")
+        print(f"Received initial response for {ticker}:")
         print(f"Request ID: {response.get('id', 'Unknown')}")
         
         # Check if we need to poll for results
         if response.get('status') in ['IN_QUEUE', 'IN_PROGRESS']:
-            print(f"⏳ Polling for completion...")
+            print(f"Polling for completion...")
             final_response = poll_for_result(response.get('id'))
         else:
             final_response = response
         
         if final_response:
-            print(f"✅ Received final response for {ticker}:")
+            print(f"Received final response for {ticker}:")
             print(f"Raw response: {json.dumps(final_response, indent=2)}")
             
             # Extract the actual LLM response
             llm_response = extract_llm_response(final_response)
             
             if llm_response:
-                print(f"📋 Extracted LLM response for {ticker}:")
+                print(f"Extracted LLM response for {ticker}:")
                 print(f"LLM Response: {json.dumps(llm_response, indent=2)}")
                 
                 # Save the extracted LLM response to database
                 save_to_database(ticker, llm_response, 'completed')
                 return True  # Success
             else:
-                print(f"❌ Failed to extract LLM response for {ticker}")
+                print(f"Failed to extract LLM response for {ticker}")
                 # Save raw response anyway
                 save_to_database(ticker, final_response, 'failed')
                 return False  # Failed
         else:
-            print(f"❌ No final response received for {ticker}")
+            print(f"No final response received for {ticker}")
             # Save raw response anyway
             save_to_database(ticker, response, 'failed')
             return False  # Failed
     else:
-        print(f"❌ No response received for {ticker}")
+        print(f"No response received for {ticker}")
         save_to_database(ticker, None, 'failed')
         return False  # Failed
 
@@ -684,7 +684,7 @@ def fetch(from_date=None, limit=600):
         limit: Number of tickers to process (default: 600)
     """
     start_time = time.time()  # Start timer
-    print("🚀 Starting LLM analysis...")
+    print("Starting LLM analysis...")
     
     # Track success/failure counts
     successful_saves = 0
@@ -707,14 +707,14 @@ def fetch(from_date=None, limit=600):
         tickers = [row[0] for row in result.fetchall()]
         
         if not tickers:
-            print("❌ No tickers found with sufficient data")
+            print("No tickers found with sufficient data")
             return
         
-        print(f" Found {len(tickers)} tickers with sufficient data")
+        print(f"Found {len(tickers)} tickers with sufficient data")
         
         # Process each ticker
         for i, ticker in enumerate(tickers, 1):
-            print(f"\n🔄 Processing ticker {i}/{len(tickers)}: {ticker}")
+            print(f"\nProcessing ticker {i}/{len(tickers)}: {ticker}")
             success = process_ticker(ticker, conn)
             if success:
                 successful_saves += 1
@@ -724,12 +724,12 @@ def fetch(from_date=None, limit=600):
     # Calculate and display total time and results
     end_time = time.time()
     total_time = end_time - start_time
-    print(f"\n🎉 Completed processing {len(tickers)} tickers!")
-    print(f"⏱️  Total execution time: {total_time:.2f} seconds ({total_time/60:.2f} minutes)")
-    print(f"📊 Results Summary:")
-    print(f"   ✅ Successfully saved: {successful_saves}")
-    print(f"   ❌ Failed to save: {failed_saves}")
-    print(f"   📈 Success rate: {(successful_saves/(successful_saves+failed_saves)*100):.1f}%")
+    print(f"\nCompleted processing {len(tickers)} tickers!")
+    print(f"Total execution time: {total_time:.2f} seconds ({total_time/60:.2f} minutes)")
+    print(f"Results Summary:")
+    print(f"   Successfully saved: {successful_saves}")
+    print(f"   Failed to save: {failed_saves}")
+    print(f"   Success rate: {(successful_saves/(successful_saves+failed_saves)*100):.1f}%")
 
 def main():
     """
