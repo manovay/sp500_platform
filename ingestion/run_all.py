@@ -60,6 +60,9 @@ def get_meta_info():
                     "frequency": row[0],
                     "last_run_date": row[1]
                 }
+                # Override frequency for manual scripts
+                if table == "manual":
+                    meta_info[script]["frequency"] = "manual"
             else:
                 meta_info[script] = {
                     "frequency": "manual",
