@@ -474,7 +474,10 @@ def api_history():
         # Determine start date based on timeframe
         end_date = datetime.now()
         
-        if timeframe == 'ytd':
+        if timeframe == 'all':
+            # Project start date: August 25, 2025
+            start_date = datetime(2025, 8, 25)
+        elif timeframe == 'ytd':
             start_date = datetime(end_date.year, 1, 1)
         elif timeframe == '3m':
             start_date = end_date - timedelta(days=90)

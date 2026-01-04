@@ -149,6 +149,12 @@ const History = () => {
           <h1 className="card-title">Portfolio History</h1>
           <div className="segmented-control">
             <button 
+              className={timeframe === 'all' ? 'active' : ''}
+              onClick={() => setTimeframe('all')}
+            >
+              All Time
+            </button>
+            <button 
               className={timeframe === 'ytd' ? 'active' : ''}
               onClick={() => setTimeframe('ytd')}
             >

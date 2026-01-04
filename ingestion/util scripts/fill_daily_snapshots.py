@@ -24,7 +24,7 @@ ALPACA_KEY = os.getenv("ALPACA_KEY")
 ALPACA_SECRET = os.getenv("ALPACA_SECRET")
 FMP_KEY = os.getenv("FMP_API_KEY")
 ALPACA_BASE = os.getenv("ALPACA_BASE", "https://paper-api.alpaca.markets")  # or live base
-DEFAULT_BACKFILL_DAYS = int(os.getenv("BACKFILL_DAYS", "56"))
+DEFAULT_BACKFILL_DAYS = int(os.getenv("BACKFILL_DAYS", "12"))
 
 if not DB_URL:
     raise SystemExit("Missing DATABASE_URL")

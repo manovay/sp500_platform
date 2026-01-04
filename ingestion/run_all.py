@@ -105,6 +105,21 @@ def update_last_run_date(script):
         )
         conn.commit()
 
+def get_last_nav_date():
+    """Get the most recent date from nav_weekly table"""
+    try:
+        with engine.connect() as conn:
+            result = conn.execute(text("""
+                SELECT MAX(week_start_date) 
+                FROM nav_weekly
+            """))
+            row = result.fetchone()
+            if row and row[0]:
+                return row[0]
+    except Exception:
+        pass
+    return None
+
 def run_weekly_stats_and_email():
     """Run weekly stats collection and email reporting using consolidated manager"""
     try:
@@ -127,8 +142,19 @@ def main():
             try:
                 print(f"\n[{datetime.now().isoformat()}] --- Running {script}.py (frequency: {freq}, last_run_date: {last_run}) ---")
                 module = importlib.import_module(script)
-                # For manual scripts, use 7 days. For others, use last_run or 3 years
-                if freq == "manual":
+                # For manual scripts, use last known date from database or 7 days back
+                if freq == "manual" and script == "fetch_daily_snapshots":
+                    last_nav_date = get_last_nav_date()
+                    if last_nav_date:
+                        # Fetch from day after last known date, or 7 days back if that's too old
+                        from_date_obj = last_nav_date + timedelta(days=1)
+                        seven_days_ago = date.today() - timedelta(days=7)
+                        from_date = min(from_date_obj, seven_days_ago).isoformat()
+                        print(f"[{datetime.now().isoformat()}] Using last nav date: {last_nav_date}, fetching from: {from_date}")
+                    else:
+                        from_date = (date.today() - timedelta(days=30)).isoformat()
+                        print(f"[{datetime.now().isoformat()}] No nav data found, fetching last 30 days")
+                elif freq == "manual":
                     from_date = (date.today() - timedelta(days=7)).isoformat()
                 else:
                     from_date = last_run if last_run else (date.today() - timedelta(days=365*3)).isoformat()
