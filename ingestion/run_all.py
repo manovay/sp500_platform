@@ -146,10 +146,10 @@ def main():
                 if freq == "manual" and script == "fetch_daily_snapshots":
                     last_nav_date = get_last_nav_date()
                     if last_nav_date:
-                        # Fetch from day after last known date, or 7 days back if that's too old
+                        # Fetch from day after last known date, but limit to 7 days back max
                         from_date_obj = last_nav_date + timedelta(days=1)
                         seven_days_ago = date.today() - timedelta(days=7)
-                        from_date = min(from_date_obj, seven_days_ago).isoformat()
+                        from_date = max(from_date_obj, seven_days_ago).isoformat()
                         print(f"[{datetime.now().isoformat()}] Using last nav date: {last_nav_date}, fetching from: {from_date}")
                     else:
                         from_date = (date.today() - timedelta(days=30)).isoformat()

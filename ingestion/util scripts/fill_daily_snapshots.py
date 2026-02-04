@@ -102,7 +102,7 @@ def get_alpaca_equity_series(days: int):
     stamps = j.get("timestamp", [])
     equities = j.get("equity", [])
     
-    print(f"🔍 Alpaca API Debug:")
+    print(f"[DEBUG] Alpaca API Debug:")
     print(f"   Requested date range: {params['date_start']} to {params['date_end']}")
     print(f"   Raw response keys: {list(j.keys())}")
     print(f"   Timestamps returned: {len(stamps)}")
@@ -268,7 +268,7 @@ def compute_and_upsert_daily_return(day: dt.date):
                 {"wk": week_start, "we": week_end, "pr": port_ret, "br": bench_ret, "er": excess},
             )
     
-    print(f"✓ {day}: portfolio={port_ret:.4f}%  benchmark={bench_ret:.4f}%  excess={excess:.4f}%")
+    print(f"[OK] {day}: portfolio={port_ret:.4f}%  benchmark={bench_ret:.4f}%  excess={excess:.4f}%")
     return True
 
 def compute_and_upsert_week_return(wk: dt.date):
@@ -342,7 +342,7 @@ def compute_and_upsert_week_return(wk: dt.date):
                 {"wk": wk, "we": week_end, "pr": port_ret, "br": bench_ret, "er": excess},
             )
     
-    print(f"✓ {wk}: portfolio={port_ret:.4f}%  benchmark={bench_ret:.4f}%  excess={excess:.4f}%")
+    print(f"[OK] {wk}: portfolio={port_ret:.4f}%  benchmark={bench_ret:.4f}%  excess={excess:.4f}%")
     return True
 
 # ----------------- Backfill logic -----------------
@@ -356,14 +356,14 @@ def backfill(backfill_days: int):
         print("No trading days to backfill.")
         return
     
-    print(f"📅 Processing {len(daily_keys)} trading days (weekends skipped)")
+    print(f"[INFO] Processing {len(daily_keys)} trading days (weekends skipped)")
 
     # Fetch historical series once
     alpaca_series = get_alpaca_equity_series(backfill_days)
     fmp_series = get_fmp_spy_adj_close(backfill_days)
     
-    print(f"📊 Fetched {len(alpaca_series)} equity data points from Alpaca")
-    print(f"📈 Fetched {len(fmp_series)} SPY data points from FMP")
+    print(f"[INFO] Fetched {len(alpaca_series)} equity data points from Alpaca")
+    print(f"[INFO] Fetched {len(fmp_series)} SPY data points from FMP")
     if alpaca_series:
         print(f"   Equity date range: {alpaca_series[0][0]} to {alpaca_series[-1][0]}")
     if fmp_series:
@@ -383,7 +383,7 @@ def backfill(backfill_days: int):
                 break
         
         if equity_date is None:
-            print(f"⚠️ Skipping {day}: no equity data available.")
+            print(f"[WARNING] Skipping {day}: no equity data available.")
             continue
 
         # For benchmark: use the most recent price on or before this day
@@ -394,7 +394,7 @@ def backfill(backfill_days: int):
                 break
         
         if price_date is None:
-            print(f"⚠️ Skipping {day}: no SPY price data available.")
+            print(f"[WARNING] Skipping {day}: no SPY price data available.")
             continue
 
         # Store the data
@@ -417,7 +417,7 @@ def run_today_once():
     
     # Skip if today is a weekend
     if not is_weekday(today):
-        print(f"⏭️ Skipping weekend day: {today}")
+        print(f"[SKIP] Skipping weekend day: {today}")
         return
 
     # current Alpaca account
@@ -474,12 +474,12 @@ def clean_weekend_data():
             """)).rowcount
             
             if weekend_nav_deleted > 0 or weekend_bench_deleted > 0 or weekend_stats_deleted > 0:
-                print(f"🧹 Cleaned weekend data: {weekend_nav_deleted} nav records, {weekend_bench_deleted} benchmark records, {weekend_stats_deleted} stats records")
+                print(f"[INFO] Cleaned weekend data: {weekend_nav_deleted} nav records, {weekend_bench_deleted} benchmark records, {weekend_stats_deleted} stats records")
             else:
-                print("✅ No weekend data found to clean")
+                print("[OK] No weekend data found to clean")
                 
     except Exception as e:
-        print(f"❌ Error cleaning weekend data: {str(e)}")
+        print(f"[ERROR] Error cleaning weekend data: {str(e)}")
 
 def check_migration_status():
     """
@@ -512,16 +512,43 @@ def check_migration_status():
             """)).fetchone()[0]
             
             if not (nav_exists and bench_exists and columns_exist):
-                print("❌ ERROR: Required tables/columns not found!")
+                print("[ERROR] Required tables/columns not found!")
                 print("   Please run the migration script first:")
                 print("   python migrate_weekly_analytics.py")
                 return False
             
-            print("✅ Migration status: All required tables and columns exist")
+            print("[OK] Migration status: All required tables and columns exist")
             return True
             
     except Exception as e:
-        print(f"❌ Error checking migration status: {str(e)}")
+        print(f"[ERROR] Error checking migration status: {str(e)}")
+        return False
+
+def update_ingestion_metadata():
+    """
+    Update ingestion_metadata to reflect that fetch_daily_snapshots.py has run.
+    Updates all three tables that use this script: nav_weekly, benchmark_weekly, daily_snapshots
+    """
+    try:
+        today = dt.date.today()
+        with engine.begin() as conn:
+            # Update all three tables that use fetch_daily_snapshots.py
+            conn.execute(
+                text("""
+                    UPDATE ingestion_metadata 
+                    SET last_run_date = :today 
+                    WHERE script_name = 'fetch_daily_snapshots.py'
+                """),
+                {"today": today}
+            )
+            updated = conn.execute(
+                text("SELECT COUNT(*) FROM ingestion_metadata WHERE script_name = 'fetch_daily_snapshots.py' AND last_run_date = :today"),
+                {"today": today}
+            ).scalar()
+            print(f"[OK] Updated ingestion_metadata: {updated} table(s) now show last_run_date = {today}")
+            return True
+    except Exception as e:
+        print(f"[WARNING] Could not update ingestion_metadata: {str(e)}")
         return False
 
 def main(backfill_days=44):
@@ -532,24 +559,28 @@ def main(backfill_days=44):
     NOTE: This script now skips weekends to avoid contaminating p-value calculations
     with 0% returns from non-trading days.
     """
-    print("🔄 Starting daily snapshots process (weekends skipped)...")
+    print("[INFO] Starting daily snapshots process (weekends skipped)...")
     
     # Check migration status before running
     if not check_migration_status():
-        print("\n❌ Cannot proceed without proper migration. Exiting.")
+        print("\n[ERROR] Cannot proceed without proper migration. Exiting.")
         return False
     
     try:
         # First, clean any existing weekend data that might contaminate p-values
-        print("🧹 Cleaning existing weekend data...")
+        print("[INFO] Cleaning existing weekend data...")
         clean_weekend_data()
         
         # Run backfill for specified days
         backfill(max(backfill_days, 1))
-        print("✅ Daily snapshots completed successfully")
+        
+        # Update ingestion_metadata to reflect successful run
+        update_ingestion_metadata()
+        
+        print("[OK] Daily snapshots completed successfully")
         return True
     except Exception as e:
-        print(f"❌ Error in daily snapshots: {str(e)}")
+        print(f"[ERROR] Error in daily snapshots: {str(e)}")
         return False
 
 if __name__ == "__main__":

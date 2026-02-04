@@ -154,12 +154,12 @@ def clean_weekend_data():
             """)).rowcount
             
             if weekend_nav_deleted > 0 or weekend_bench_deleted > 0 or weekend_stats_deleted > 0:
-                print(f"🧹 Cleaned weekend data: {weekend_nav_deleted} nav records, {weekend_bench_deleted} benchmark records, {weekend_stats_deleted} stats records")
+                print(f"[INFO] Cleaned weekend data: {weekend_nav_deleted} nav records, {weekend_bench_deleted} benchmark records, {weekend_stats_deleted} stats records")
             else:
-                print("✅ No weekend data found to clean")
+                print("[OK] No weekend data found to clean")
                 
     except Exception as e:
-        print(f"❌ Error cleaning weekend data: {str(e)}")
+        print(f"[ERROR] Error cleaning weekend data: {str(e)}")
 
 # ----------------- DB upserts -----------------
 def upsert_nav_daily(date, equity: Decimal, cash: Decimal, note="daily fetch"):
@@ -199,10 +199,10 @@ def fetch(from_date):
     Main fetch function that follows the standard pattern used by other fetch scripts.
     Fetches daily portfolio and benchmark data for the specified date range.
     """
-    print(f"🔄 Starting daily snapshots fetch from {from_date}...")
+    print(f"[INFO] Starting daily snapshots fetch from {from_date}...")
     
     # First, clean any existing weekend data that might contaminate p-values
-    print("🧹 Cleaning existing weekend data...")
+    print("[INFO] Cleaning existing weekend data...")
     clean_weekend_data()
     
     # Parse from_date
@@ -213,14 +213,14 @@ def fetch(from_date):
     today = dt.date.today()
     days_to_fetch = (today - from_date).days + 1
     
-    print(f"📅 Fetching {days_to_fetch} days of data...")
+    print(f"[INFO] Fetching {days_to_fetch} days of data...")
     
     # Fetch historical series
     alpaca_series = get_alpaca_equity_series(days_to_fetch)
     fmp_series = get_fmp_spy_adj_close(days_to_fetch)
     
-    print(f"📊 Fetched {len(alpaca_series)} equity data points from Alpaca")
-    print(f"📈 Fetched {len(fmp_series)} SPY data points from FMP")
+    print(f"[INFO] Fetched {len(alpaca_series)} equity data points from Alpaca")
+    print(f"[INFO] Fetched {len(fmp_series)} SPY data points from FMP")
     if alpaca_series:
         print(f"   Equity date range: {alpaca_series[0][0]} to {alpaca_series[-1][0]}")
     if fmp_series:
@@ -244,7 +244,7 @@ def fetch(from_date):
                 break
         
         if equity_date is None:
-            print(f"⚠️ Skipping {day}: no equity data available.")
+            print(f"[WARNING] Skipping {day}: no equity data available.")
             continue
 
         # For benchmark: use the most recent price on or before this day
@@ -255,7 +255,7 @@ def fetch(from_date):
                 break
         
         if price_date is None:
-            print(f"⚠️ Skipping {day}: no SPY price data available.")
+            print(f"[WARNING] Skipping {day}: no SPY price data available.")
             continue
 
         # Store the data
@@ -269,7 +269,7 @@ def fetch(from_date):
         
         upserts += 1
 
-    print(f"✅ Daily snapshots fetch completed successfully - {upserts} records processed")
+    print(f"[OK] Daily snapshots fetch completed successfully - {upserts} records processed")
     return upserts
 
 if __name__ == "__main__":
