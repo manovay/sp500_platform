@@ -146,10 +146,9 @@ def main():
                 if freq == "manual" and script == "fetch_daily_snapshots":
                     last_nav_date = get_last_nav_date()
                     if last_nav_date:
-                        # Fetch from day after last known date, but limit to 7 days back max
+                        # Fetch from day after last known date (no cap so gaps self-heal)
                         from_date_obj = last_nav_date + timedelta(days=1)
-                        seven_days_ago = date.today() - timedelta(days=7)
-                        from_date = max(from_date_obj, seven_days_ago).isoformat()
+                        from_date = from_date_obj.isoformat()
                         print(f"[{datetime.now().isoformat()}] Using last nav date: {last_nav_date}, fetching from: {from_date}")
                     else:
                         from_date = (date.today() - timedelta(days=30)).isoformat()
@@ -164,7 +163,7 @@ def main():
                 print(f"[{datetime.now().isoformat()}] --- {script}.py finished successfully and last_run_date updated ---")
             except Exception as e:
                 print(f"[{datetime.now().isoformat()}] Error running {script}: {e}")
-                break
+                continue
         else:
             print(f"[{datetime.now().isoformat()}] Skipping {script}.py (frequency: {freq}, last_run_date: {last_run}) - Not due yet.")
     
