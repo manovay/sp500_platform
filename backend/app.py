@@ -68,6 +68,27 @@ def check_alpaca_configured():
         }), 500
     return None
 
+def _safe_float(value, default=0.0):
+    """
+    Alpaca fields occasionally come back as None (or as strings).
+    This keeps portfolio endpoints from 500'ing on float(None).
+    """
+    if value is None:
+        return default
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+def _safe_int_from_float(value, default=0):
+    f = _safe_float(value, default=None)
+    if f is None:
+        return default
+    try:
+        return int(f)
+    except (TypeError, ValueError):
+        return default
+
 def get_full_data_for_ticker_llm(conn, ticker):
     """
     Helper to fetch and build the full_data dict for a given ticker, using current date - 7 days for snapshot.
@@ -416,10 +437,10 @@ def api_account():
         account = trading_client.get_account()
         
         account_data = {
-            "equity": float(account.equity),
-            "cash": float(account.cash),
-            "buying_power": float(account.buying_power),
-            "portfolio_value": float(account.portfolio_value),
+            "equity": _safe_float(getattr(account, "equity", None), default=0.0),
+            "cash": _safe_float(getattr(account, "cash", None), default=0.0),
+            "buying_power": _safe_float(getattr(account, "buying_power", None), default=0.0),
+            "portfolio_value": _safe_float(getattr(account, "portfolio_value", None), default=0.0),
             "market_open": account.status == "ACTIVE",
             "last_updated": account.created_at.isoformat() + "Z"
         }
@@ -441,15 +462,16 @@ def api_positions():
         
         positions_data = []
         for position in positions:
-            if float(position.qty) != 0:  # Only include non-zero positions
+            qty_f = _safe_float(getattr(position, "qty", None), default=0.0)
+            if qty_f != 0:  # Only include non-zero positions
                 positions_data.append({
-                    "symbol": position.symbol,
-                    "qty": int(float(position.qty)),
-                    "market_value": float(position.market_value),
-                    "avg_price": float(position.avg_entry_price),
-                    "unrealized_pl": float(position.unrealized_pl),
-                    "unrealized_pl_pct": float(position.unrealized_plpc),
-                    "current_price": float(position.current_price)
+                    "symbol": getattr(position, "symbol", None),
+                    "qty": _safe_int_from_float(getattr(position, "qty", None), default=0),
+                    "market_value": _safe_float(getattr(position, "market_value", None), default=0.0),
+                    "avg_price": _safe_float(getattr(position, "avg_entry_price", None), default=0.0),
+                    "unrealized_pl": _safe_float(getattr(position, "unrealized_pl", None), default=0.0),
+                    "unrealized_pl_pct": _safe_float(getattr(position, "unrealized_plpc", None), default=0.0),
+                    "current_price": _safe_float(getattr(position, "current_price", None), default=0.0)
                 })
         
         return jsonify({"status": "ok", "positions": positions_data})
