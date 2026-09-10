@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { getPortfolioAnalysis } from '../api';
 
 export default function PortfolioAnalysis() {
   const [portfolioData, setPortfolioData] = useState(null);
@@ -9,16 +10,11 @@ export default function PortfolioAnalysis() {
     fetchPortfolioAnalysis();
   }, []);
 
-  const fetchPortfolioAnalysis = async () => {
+  const fetchPortfolioAnalysis = async ({ force = false } = {}) => {
     try {
       setLoading(true);
-      const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5000';
-      const response = await fetch(`${API_BASE}/portfolio-analysis`);
-      if (!response.ok) {
-        throw new Error('Failed to fetch portfolio analysis');
-      }
-      const data = await response.json();
-      setPortfolioData(data);
+      setPortfolioData(await getPortfolioAnalysis({ force }));
+      setError(null);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -65,7 +61,7 @@ export default function PortfolioAnalysis() {
       <div className="error">
         <h3>Error Loading Portfolio Analysis</h3>
         <p>{error}</p>
-        <button onClick={fetchPortfolioAnalysis} className="btn btn-primary mt-md">
+        <button onClick={() => fetchPortfolioAnalysis({ force: true })} className="btn btn-primary mt-md">
           Retry
         </button>
       </div>
@@ -83,30 +79,32 @@ export default function PortfolioAnalysis() {
 
   return (
     <div>
-      <div className="card mb-lg">
-        <div className="card-header">
-          <h1 className="card-title">Weight Analysis</h1>
-          <p className="text-muted mb-0">Top 10 Allocation Differences: FMP vs LLM Recommendations</p>
+      <header className="page-header">
+        <div className="page-header-text">
+          <p className="page-eyebrow">Model vs market cap</p>
+          <h1>Weight Analysis</h1>
+          <p className="page-desc">
+            The ten largest gaps between plain S&amp;P 500 market-cap weights and the weights
+            the model asked for.
+          </p>
         </div>
-        <div className="card-body">
-          <button onClick={fetchPortfolioAnalysis} className="btn btn-sm">
-            ↻ Refresh Data
-          </button>
-        </div>
-      </div>
+        <button onClick={() => fetchPortfolioAnalysis({ force: true })} className="btn btn-sm">
+          Refresh
+        </button>
+      </header>
 
       <div className="grid grid-3 mb-xl">
         <div className="card">
-          <h4 className="text-muted mb-sm">FMP Allocation (TOP 10)</h4>
-          <div className="text-xl font-bold">{(portfolioData.summary.total_fmp_allocation * 100).toFixed(2)}%</div>
+          <p className="stat-label">Market-cap weight (top 10)</p>
+          <div className="stat-value">{(portfolioData.summary.total_fmp_allocation * 100).toFixed(2)}%</div>
         </div>
         <div className="card">
-          <h4 className="text-muted mb-sm">LLM Allocation (TOP 10)</h4>
-          <div className="text-xl font-bold">{(portfolioData.summary.total_llm_allocation * 100).toFixed(2)}%</div>
+          <p className="stat-label">Model weight (top 10)</p>
+          <div className="stat-value">{(portfolioData.summary.total_llm_allocation * 100).toFixed(2)}%</div>
         </div>
         <div className="card">
-          <h4 className="text-muted mb-sm">Total Difference</h4>
-          <div className={`text-xl font-bold ${getDifferenceColor(portfolioData.summary.total_difference)}`}>
+          <p className="stat-label">Total difference</p>
+          <div className={`stat-value ${getDifferenceColor(portfolioData.summary.total_difference)}`}>
             {getDifferenceIcon(portfolioData.summary.total_difference)} {(portfolioData.summary.total_difference * 100).toFixed(2)}%
           </div>
         </div>

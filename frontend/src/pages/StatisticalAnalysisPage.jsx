@@ -1,12 +1,57 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
+import {
+  BarChart, Bar, Cell, LineChart, Line, XAxis, YAxis,
+  CartesianGrid, Tooltip, ReferenceLine, ResponsiveContainer
+} from 'recharts';
 import { getPerformanceSummary, getTreasuryRate } from '../api';
+
+const pct = (value, decimals = 2, sign = false) => {
+  if (value === null || value === undefined || Number.isNaN(value)) return '—';
+  const formatted = `${(value * 100).toFixed(decimals)}%`;
+  return sign && value >= 0 ? `+${formatted}` : formatted;
+};
+
+const num = (value, decimals = 3, sign = false) => {
+  if (value === null || value === undefined || Number.isNaN(value)) return '—';
+  const formatted = value.toFixed(decimals);
+  return sign && value >= 0 ? `+${formatted}` : formatted;
+};
+
+// Dates arrive as plain "YYYY-MM-DD". Passing that to new Date() parses it as UTC
+// midnight, which lands on the previous day in western timezones.
+const parseDay = (value) => {
+  if (!value) return null;
+  const [y, m, d] = String(value).slice(0, 10).split('-').map(Number);
+  return Number.isFinite(y) ? new Date(y, m - 1, d) : null;
+};
+
+const shortDate = (value) => {
+  const d = parseDay(value);
+  return d ? d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '';
+};
+
+const longDate = (value) => {
+  const d = parseDay(value);
+  return d ? d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '';
+};
+
+const deltaClass = (value, goodWhenPositive = true) => {
+  if (value === null || value === undefined || Number.isNaN(value)) return '';
+  const good = goodWhenPositive ? value >= 0 : value <= 0;
+  return good ? 'positive' : 'negative';
+};
+
+const diff = (a, b) => {
+  if (a === null || a === undefined || b === null || b === undefined) return null;
+  return a - b;
+};
 
 export default function StatisticalAnalysisPage() {
   const [performanceData, setPerformanceData] = useState(null);
+  const [treasuryRate, setTreasuryRate] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [treasuryRate, setTreasuryRate] = useState(null);
-  const [chartTab, setChartTab] = useState('days'); // 'days' or 'weeks'
+  const [chartTab, setChartTab] = useState('weekly');
 
   useEffect(() => {
     loadPerformanceData();
@@ -16,16 +61,10 @@ export default function StatisticalAnalysisPage() {
     try {
       setLoading(true);
       setError(null);
-      
-      // Load treasury rate and performance data
       const [treasuryData, summary] = await Promise.all([
         getTreasuryRate(),
-        getPerformanceSummary({ 
-          // Always use full history - backend will calculate from 8-25-2025
-          // rf_annual will be fetched automatically by backend
-        })
+        getPerformanceSummary({})
       ]);
-      
       setTreasuryRate(treasuryData);
       setPerformanceData(summary);
     } catch (err) {
@@ -36,17 +75,24 @@ export default function StatisticalAnalysisPage() {
     }
   };
 
-  const formatPercentage = (value, decimals = 2, sign = false) => {
-    if (value === null || value === undefined || isNaN(value)) return '—';
-    const formatted = `${(value * 100).toFixed(decimals)}%`;
-    return sign && value >= 0 ? `+${formatted}` : formatted;
-  };
+  const weeklySeries = performanceData?.weekly_series ?? [];
 
-  const formatNumber = (value, decimals = 4, sign = false) => {
-    if (value === null || value === undefined || isNaN(value)) return '—';
-    const formatted = value.toFixed(decimals);
-    return sign && value >= 0 ? `+${formatted}` : formatted;
-  };
+  const chartData = useMemo(() => {
+    let compounded = 1;
+    return weeklySeries.map((week) => {
+      const oz = week.portfolio_return ?? 0;
+      const spy = week.benchmark_return ?? 0;
+      compounded *= (1 + oz) / (1 + spy);
+      return {
+        date: week.date,
+        label: shortDate(week.date),
+        delta: (week.excess_return ?? 0) * 100,
+        oz: oz * 100,
+        spy: spy * 100,
+        cumulative: (compounded - 1) * 100
+      };
+    });
+  }, [weeklySeries]);
 
   if (loading) {
     return (
@@ -59,625 +105,458 @@ export default function StatisticalAnalysisPage() {
     );
   }
 
-  if (error) {
+  if (error || !performanceData) {
     return (
       <div className="performance-report">
         <div className="error-message">
-          <h2>Error Loading Performance Data</h2>
-          <p>{error}</p>
+          <h2>Could not load performance data</h2>
+          <p>{error || 'No statistics were returned by the API.'}</p>
           <button onClick={loadPerformanceData} className="btn btn-primary">
-            Try Again
+            Try again
           </button>
         </div>
       </div>
     );
   }
 
-  if (!performanceData) {
+  const daily = performanceData.daily_returns ?? {};
+  const weekly = performanceData.weekly_returns ?? {};
+  const cumulative = performanceData.cumulative_performance ?? {};
+  const risk = performanceData.risk ?? {};
+  const tests = performanceData.statistical_tests?.weekly ?? {};
+  const dailyTests = performanceData.statistical_tests?.daily ?? {};
+  const period = performanceData.period ?? {};
+
+  const weeksCount = period.weeks ?? weeklySeries.length;
+  const winRate = performanceData.win_rate_weekly ?? performanceData.win_rate;
+  const winWeeks = winRate != null ? Math.round(winRate * weeksCount) : null;
+  const pValue = tests.p_value;
+  const pBoot = tests.p_value_bootstrap;
+  const ci = tests.bootstrap_ci ?? [];
+  const outperf = cumulative.outperformance_compounded ?? cumulative.outperformance;
+  const significant = pValue != null && pValue <= 0.05;
+
+  const sharpeDelta = diff(daily.portfolio?.sharpe_annualized, daily.benchmark?.sharpe_annualized);
+  const mddDelta = diff(daily.portfolio?.max_drawdown, daily.benchmark?.max_drawdown);
+
+  const CustomTooltip = ({ active, payload }) => {
+    if (!active || !payload?.length) return null;
+    const point = payload[0].payload;
     return (
-      <div className="performance-report">
-        <div className="error-message">
-          <h2>No Performance Data Available</h2>
-          <p>Unable to load performance statistics.</p>
+      <div className="chart-tooltip">
+        <div className="chart-tooltip-title">Week of {longDate(point.date)}</div>
+        <div className="chart-tooltip-row">
+          <span>Oracle Zero</span><strong>{point.oz.toFixed(2)}%</strong>
         </div>
+        <div className="chart-tooltip-row">
+          <span>SPY</span><strong>{point.spy.toFixed(2)}%</strong>
+        </div>
+        <div className="chart-tooltip-row">
+          <span>Delta</span>
+          <strong className={point.delta >= 0 ? 'text-success' : 'text-danger'}>
+            {point.delta >= 0 ? '+' : ''}{point.delta.toFixed(2)} pp
+          </strong>
+        </div>
+        {chartTab === 'cumulative' && (
+          <div className="chart-tooltip-row">
+            <span>Running gap</span>
+            <strong className={point.cumulative >= 0 ? 'text-success' : 'text-danger'}>
+              {point.cumulative >= 0 ? '+' : ''}{point.cumulative.toFixed(2)}%
+            </strong>
+          </div>
+        )}
       </div>
     );
-  }
+  };
 
   return (
     <div>
-      {/* Header */}
-      <div className="card mb-lg">
-        <div className="card-header">
-          <h1 className="card-title">OracleZero Statistical Analysis</h1>
-          <div className="disclaimer" style={{ marginTop: 'var(--space-md)' }}>
-            <p><strong>⚠️ Disclaimer:</strong> This model has only been running since August 25, 2025. Results are based on limited historical data and should not be considered indicative of long-term performance.</p>
-          </div>
+      <header className="page-header">
+        <div className="page-header-text">
+          <p className="page-eyebrow">Oracle Zero vs SPY</p>
+          <h1>Statistics</h1>
+          <p className="page-desc">
+            {weeksCount} weeks against the benchmark, and whether the difference means
+            anything.
+          </p>
         </div>
+      </header>
+
+      <div className="disclaimer">
+        <p>
+          <strong>Disclaimer:</strong> {weeksCount} weeks of data, ending{' '}
+          {longDate(period.end)}. Too short a sample to say anything about long-term
+          performance.
+        </p>
       </div>
 
-      {/* Performance Chart */}
-      <div className="card mb-lg">
-        <div className="chart-tabs">
-          <button 
-            className={`chart-tab ${chartTab === 'days' ? 'active' : ''}`}
-            onClick={() => setChartTab('days')}
-          >
-            Last 7 Days
-          </button>
-          <button 
-            className={`chart-tab ${chartTab === 'weeks' ? 'active' : ''}`}
-            onClick={() => setChartTab('weeks')}
-          >
-            Last 4 Weeks
-          </button>
-        </div>
-        
-        <div className="chart-content">
-          {chartTab === 'days' ? (
-            <div className="performance-chart daily-chart">
-              <h2 className="text-center">Daily Performance vs SPY</h2>
-              <div className="chart-y-axis">
-                <div className="y-axis-label">1%</div>
-                <div className="y-axis-label">0.5%</div>
-                <div className="y-axis-label">0%</div>
-                <div className="y-axis-label">-0.5%</div>
-                <div className="y-axis-label">-1%</div>
-              </div>
-              <div className="chart-legend">
-                <div className="legend-item">
-                  <div className="legend-color oz-color"></div>
-                  <span>OracleZero</span>
-                </div>
-                <div className="legend-item">
-                  <div className="legend-color spy-color"></div>
-                  <span>SPY</span>
-                </div>
-              </div>
-              <div className="line-chart">
-                <svg className="chart-svg" viewBox="0 0 1000 800" preserveAspectRatio="xMidYMid meet">
-                  {/* Grid lines */}
-                  <defs>
-                    <pattern id="grid" width="100" height="100" patternUnits="userSpaceOnUse">
-                      <path d="M 100 0 L 0 0 0 100" fill="none" stroke="rgba(55, 65, 81, 0.75)" strokeWidth="1"/>
-                    </pattern>
-                  </defs>
-                  <rect width="100%" height="100%" fill="url(#grid)" />
-                  
-                  {/* Zero line */}
-                  <line x1="100" y1="400" x2="900" y2="400" stroke="var(--border)" strokeWidth="4"/>
-                  
-                  {/* Performance lines */}
-                  {(() => {
-                    // Get the last 7 days of data, but filter out weekends (Saturday=6, Sunday=0)
-                    const tradingDays = performanceData?.recent_performance?.last_10_days?.slice(-7).filter(day => {
-                      const date = new Date(day.date);
-                      const dayOfWeek = date.getDay();
-                      return dayOfWeek !== 0 && dayOfWeek !== 6; // Exclude Sunday (0) and Saturday (6)
-                    }) || [];
-                    
-                    if (tradingDays.length === 0) {
-                      return <text x="400" y="200" textAnchor="middle" fill="var(--muted)">No data available</text>;
-                    }
-                    
-                    // Debug: Log the data we're working with
-                    console.log('Chart data:', {
-                      originalDaysCount: performanceData?.recent_performance?.last_10_days?.slice(-7).length || 0,
-                      tradingDaysCount: tradingDays.length,
-                      sampleDay: tradingDays[0],
-                      allTradingDays: tradingDays
-                    });
-                    
-                    
-                    const points = tradingDays.map((day, index) => {
-                      // Handle division by zero when there's only one point
-                      // Use smaller range to ensure points fit within chart bounds
-                      const x = tradingDays.length === 1 ? 500 : (index / (tradingDays.length - 1)) * 800 + 100;
-                      // Scale returns to fit the chart better (multiply by 20000 for better visibility)
-                      // Ensure we have valid numbers
-                      const portfolioReturn = typeof day.portfolio_return === 'number' ? day.portfolio_return : 0;
-                      const benchmarkReturn = typeof day.benchmark_return === 'number' ? day.benchmark_return : 0;
-                      const portfolioY = 400 - (portfolioReturn * 20000);
-                      const benchmarkY = 400 - (benchmarkReturn * 20000);
-                      
-                      // Debug: Log the scaling calculations
-                      console.log(`Day ${index}:`, {
-                        portfolioReturn: portfolioReturn,
-                        benchmarkReturn: benchmarkReturn,
-                        portfolioY: portfolioY,
-                        benchmarkY: benchmarkY
-                      });
-                      
-                      return { x, portfolioY, benchmarkY, day };
-                    });
-                    
-                    // OracleZero line
-                    const ozPath = points.map((point, index) => 
-                      `${index === 0 ? 'M' : 'L'} ${point.x} ${point.portfolioY}`
-                    ).join(' ');
-                    
-                    // SPY line
-                    const spyPath = points.map((point, index) => 
-                      `${index === 0 ? 'M' : 'L'} ${point.x} ${point.benchmarkY}`
-                    ).join(' ');
-                    
-                    // If we only have one point, create a small horizontal line
-                    const ozPathFinal = points.length === 1 ? 
-                      `M ${points[0].x - 10} ${points[0].portfolioY} L ${points[0].x + 10} ${points[0].portfolioY}` : 
-                      ozPath;
-                    const spyPathFinal = points.length === 1 ? 
-                      `M ${points[0].x - 10} ${points[0].benchmarkY} L ${points[0].x + 10} ${points[0].benchmarkY}` : 
-                      spyPath;
-                    
-                    return (
-                      <>
-                        {/* OracleZero line */}
-                        <path d={ozPathFinal} fill="none" stroke="var(--primary)" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"/>
-                        {/* SPY line */}
-                        <path d={spyPathFinal} fill="none" stroke="var(--muted)" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"/>
-                        
-                        {/* Data points */}
-                        {points.map((point, index) => (
-                          <g key={index}>
-                            <circle cx={point.x} cy={point.portfolioY} r="4" fill="var(--primary)" stroke="white" strokeWidth="2" style={{ cursor: 'pointer' }}/>
-                            <circle cx={point.x} cy={point.benchmarkY} r="4" fill="var(--muted)" stroke="white" strokeWidth="2" style={{ cursor: 'pointer' }}/>
-                            <text x={point.x} y="680" textAnchor="middle" fontSize="16" fill="var(--muted)">
-                              {new Date(point.day.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                            </text>
-                            {/* Hover tooltip */}
-                            <g className="hover-group" style={{ cursor: 'pointer' }}>
-                              <rect 
-                                x={point.x - 120} 
-                                y={point.portfolioY - 100} 
-                                width="240" 
-                                height="80" 
-                                fill="rgba(0, 0, 0, 0.95)" 
-                                rx="12" 
-                                stroke="var(--border)"
-                                strokeWidth="2"
-                                style={{ opacity: 0, transition: 'opacity 0.2s' }}
-                                className="tooltip-bg"
-                              />
-                              <text 
-                                x={point.x} 
-                                y={point.portfolioY - 75} 
-                                textAnchor="middle" 
-                                fontSize="16" 
-                                fill={point.day.portfolio_return >= 0 ? "var(--success)" : "var(--danger)"}
-                                fontWeight="700"
-                                style={{ opacity: 0, transition: 'opacity 0.2s' }}
-                                className="tooltip-text"
-                              >
-                                OracleZero: {formatPercentage(point.day.portfolio_return, 2, true)}
-                              </text>
-                              <text 
-                                x={point.x} 
-                                y={point.portfolioY - 50} 
-                                textAnchor="middle" 
-                                fontSize="16" 
-                                fill={point.day.benchmark_return >= 0 ? "var(--success)" : "var(--danger)"}
-                                fontWeight="700"
-                                style={{ opacity: 0, transition: 'opacity 0.2s' }}
-                                className="tooltip-text"
-                              >
-                                SPY: {formatPercentage(point.day.benchmark_return, 2, true)}
-                              </text>
-                              <text 
-                                x={point.x} 
-                                y={point.portfolioY - 25} 
-                                textAnchor="middle" 
-                                fontSize="16" 
-                                fill={point.day.excess_return >= 0 ? "var(--success)" : "var(--danger)"}
-                                fontWeight="700"
-                                style={{ opacity: 0, transition: 'opacity 0.2s' }}
-                                className="tooltip-text"
-                              >
-                                Δ: {formatPercentage(point.day.excess_return, 2, true)}
-                              </text>
-                            </g>
-                          </g>
-                        ))}
-                      </>
-                    );
-                  })()}
-                </svg>
-              </div>
-            </div>
-          ) : (
-            <div className="performance-chart weekly-chart">
-              <h2 className="text-center">Weekly Performance vs SPY</h2>
-              <div className="chart-y-axis">
-                <div className="y-axis-label">2.5%</div>
-                <div className="y-axis-label">2%</div>
-                <div className="y-axis-label">1.5%</div>
-                <div className="y-axis-label">1%</div>
-                <div className="y-axis-label">0.5%</div>
-                <div className="y-axis-label">0%</div>
-                <div className="y-axis-label">-0.5%</div>
-              </div>
-              <div className="chart-legend">
-                <div className="legend-item">
-                  <div className="legend-color oz-color"></div>
-                  <span>OracleZero</span>
-                </div>
-                <div className="legend-item">
-                  <div className="legend-color spy-color"></div>
-                  <span>SPY</span>
-                </div>
-              </div>
-              <div className="line-chart">
-                <svg className="chart-svg" viewBox="0 0 1000 800" preserveAspectRatio="xMidYMid meet">
-                  {/* Grid lines */}
-                  <defs>
-                    <pattern id="grid" width="100" height="100" patternUnits="userSpaceOnUse">
-                      <path d="M 100 0 L 0 0 0 100" fill="none" stroke="rgba(55, 65, 81, 0.75)" strokeWidth="1"/>
-                    </pattern>
-                  </defs>
-                  <rect width="100%" height="100%" fill="url(#grid)" />
-                  
-                  {/* Zero line */}
-                  <line x1="100" y1="400" x2="900" y2="400" stroke="var(--border)" strokeWidth="4"/>
-                  
-                  {/* Performance lines */}
-                  {(() => {
-                    // Get the last 4 weeks of data
-                    const tradingWeeks = performanceData?.recent_performance?.last_6_weeks?.slice(-4) || [];
-                    
-                    if (tradingWeeks.length === 0) {
-                      return <text x="400" y="200" textAnchor="middle" fill="var(--muted)">No data available</text>;
-                    }
-                    
-                    // Fixed Y-axis range from -0.5% to 2.5%
-                    const yMin = -0.005; // -0.5%
-                    const yMax = 0.025;  // 2.5%
-                    const yRange = yMax - yMin; // 0.03 (3%)
-                    const yScale = 400 / yRange; // Scale to fit 400px height
-                    const yCenter = 400; // Center Y position
-                    
-                    const points = tradingWeeks.map((week, index) => {
-                      // Handle division by zero when there's only one point
-                      const x = tradingWeeks.length === 1 ? 500 : (index / (tradingWeeks.length - 1)) * 800 + 100;
-                      // Scale returns to fit the fixed range
-                      const portfolioReturn = typeof week.portfolio_return === 'number' ? week.portfolio_return : 0;
-                      const benchmarkReturn = typeof week.benchmark_return === 'number' ? week.benchmark_return : 0;
-                      const portfolioY = Math.max(50, Math.min(750, yCenter - ((portfolioReturn - yMin) * yScale)));
-                      const benchmarkY = Math.max(50, Math.min(750, yCenter - ((benchmarkReturn - yMin) * yScale)));
-                      
-                      return { x, portfolioY, benchmarkY, week };
-                    });
-                    
-                    // OracleZero line
-                    const ozPath = points.map((point, index) => 
-                      `${index === 0 ? 'M' : 'L'} ${point.x} ${point.portfolioY}`
-                    ).join(' ');
-                    
-                    // SPY line
-                    const spyPath = points.map((point, index) => 
-                      `${index === 0 ? 'M' : 'L'} ${point.x} ${point.benchmarkY}`
-                    ).join(' ');
-                    
-                    // If we only have one point, create a small horizontal line
-                    const ozPathFinal = points.length === 1 ? 
-                      `M ${points[0].x - 10} ${points[0].portfolioY} L ${points[0].x + 10} ${points[0].portfolioY}` : 
-                      ozPath;
-                    const spyPathFinal = points.length === 1 ? 
-                      `M ${points[0].x - 10} ${points[0].benchmarkY} L ${points[0].x + 10} ${points[0].benchmarkY}` : 
-                      spyPath;
-                    
-                    return (
-                      <>
-                        {/* OracleZero line */}
-                        <path d={ozPathFinal} fill="none" stroke="var(--primary)" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"/>
-                        {/* SPY line */}
-                        <path d={spyPathFinal} fill="none" stroke="var(--muted)" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"/>
-                        
-                        {/* Data points */}
-                        {points.map((point, index) => (
-                          <g key={index}>
-                            <circle cx={point.x} cy={point.portfolioY} r="4" fill="var(--primary)" stroke="white" strokeWidth="2" style={{ cursor: 'pointer' }}/>
-                            <circle cx={point.x} cy={point.benchmarkY} r="4" fill="var(--muted)" stroke="white" strokeWidth="2" style={{ cursor: 'pointer' }}/>
-                            <text x={point.x} y="680" textAnchor="middle" fontSize="16" fill="var(--muted)">
-                              {new Date(point.week.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                            </text>
-                            {/* Hover tooltip */}
-                            <g className="hover-group" style={{ cursor: 'pointer' }}>
-                              <rect 
-                                x={point.x - 120} 
-                                y={point.portfolioY - 100} 
-                                width="240" 
-                                height="80" 
-                                fill="rgba(0, 0, 0, 0.95)" 
-                                rx="12" 
-                                stroke="var(--border)"
-                                strokeWidth="2"
-                                style={{ opacity: 0, transition: 'opacity 0.2s' }}
-                                className="tooltip-bg"
-                              />
-                              <text 
-                                x={point.x} 
-                                y={point.portfolioY - 75} 
-                                textAnchor="middle" 
-                                fontSize="16" 
-                                fill={point.week.portfolio_return >= 0 ? "var(--success)" : "var(--danger)"}
-                                fontWeight="700"
-                                style={{ opacity: 0, transition: 'opacity 0.2s' }}
-                                className="tooltip-text"
-                              >
-                                OracleZero: {formatPercentage(point.week.portfolio_return, 2, true)}
-                              </text>
-                              <text 
-                                x={point.x} 
-                                y={point.portfolioY - 50} 
-                                textAnchor="middle" 
-                                fontSize="16" 
-                                fill={point.week.benchmark_return >= 0 ? "var(--success)" : "var(--danger)"}
-                                fontWeight="700"
-                                style={{ opacity: 0, transition: 'opacity 0.2s' }}
-                                className="tooltip-text"
-                              >
-                                SPY: {formatPercentage(point.week.benchmark_return, 2, true)}
-                              </text>
-                              <text 
-                                x={point.x} 
-                                y={point.portfolioY - 25} 
-                                textAnchor="middle" 
-                                fontSize="16" 
-                                fill={point.week.excess_return >= 0 ? "var(--success)" : "var(--danger)"}
-                                fontWeight="700"
-                                style={{ opacity: 0, transition: 'opacity 0.2s' }}
-                                className="tooltip-text"
-                              >
-                                Δ: {formatPercentage(point.week.excess_return, 2, true)}
-                              </text>
-                            </g>
-                          </g>
-                        ))}
-                      </>
-                    );
-                  })()}
-                </svg>
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
-
-
-
-      {/* Compressed Performance Table */}
+      {/* ---------------------------------------------------- the numbers --- */}
       <div className="card mb-lg">
         <div className="card-header">
-          <h2 className="card-title">Performance Summary</h2>
-          <p className="section-explanation">Key performance metrics comparing OracleZero vs SPY benchmark.</p>
-          <div className="treasury-rate-display" style={{ marginTop: 'var(--space-sm)' }}>
-            <label style={{ fontWeight: '600', marginRight: 'var(--space-sm)' }}>Risk-Free Rate (Treasury):</label>
-            {treasuryRate ? (
-              <span className="treasury-rate-value">
-                {treasuryRate.treasury_rate_percent.toFixed(2)}% (Auto-fetched)
-              </span>
-            ) : (
-              <span className="treasury-rate-loading">Loading...</span>
-            )}
-          </div>
+          <h2 className="card-title">Returns and risk</h2>
+          <span className="text-sm text-muted">
+            Risk-free rate {treasuryRate ? `${treasuryRate.treasury_rate_percent.toFixed(2)}%` : '—'} (3-month Treasury, period average)
+          </span>
         </div>
-        <div className="card-body">
-          <div className="compressed-table">
+        <div className="table-container">
           <table className="performance-table">
             <thead>
               <tr>
                 <th>Metric</th>
                 <th>SPY</th>
-                <th>OracleZero</th>
+                <th>Oracle Zero</th>
                 <th>Delta</th>
               </tr>
             </thead>
             <tbody>
               <tr>
                 <td className="metric-name">
-                  <div className="metric-title">Daily Returns</div>
-                  <div className="metric-desc">Average daily returns ± volatility</div>
+                  <div className="metric-title">Cumulative return</div>
+                  <div className="metric-desc">Since August 25, 2025</div>
+                </td>
+                <td className="spy-value">{pct(cumulative.benchmark, 2, true)}</td>
+                <td className="oz-value">{pct(cumulative.portfolio, 2, true)}</td>
+                <td className={`delta-value ${deltaClass(outperf)}`}>{pct(outperf, 2, true)}</td>
+              </tr>
+              <tr>
+                <td className="metric-name">
+                  <div className="metric-title">Weekly return</div>
+                  <div className="metric-desc">Average week ± volatility</div>
                 </td>
                 <td className="spy-value">
-                  {formatPercentage(performanceData.daily_returns?.benchmark?.mean, 2, true)} ± {formatPercentage(performanceData.daily_returns?.benchmark?.std, 2)}
+                  {pct(weekly.benchmark?.mean, 2, true)} ± {pct(weekly.benchmark?.std, 2)}
                 </td>
                 <td className="oz-value">
-                  {formatPercentage(performanceData.daily_returns?.portfolio?.mean, 2, true)} ± {formatPercentage(performanceData.daily_returns?.portfolio?.std, 2)}
+                  {pct(weekly.portfolio?.mean, 2, true)} ± {pct(weekly.portfolio?.std, 2)}
                 </td>
-                <td className={`delta-value ${(performanceData.daily_returns?.excess?.mean || 0) >= 0 ? 'positive' : 'negative'}`}>
-                  {formatPercentage(performanceData.daily_returns?.excess?.mean, 2, true)}
+                <td className={`delta-value ${deltaClass(weekly.excess?.mean)}`}>
+                  {pct(weekly.excess?.mean, 3, true)}
                 </td>
               </tr>
               <tr>
                 <td className="metric-name">
-                  <div className="metric-title">Weekly Returns</div>
-                  <div className="metric-desc">Weekly performance aggregated from daily data</div>
+                  <div className="metric-title">Daily return</div>
+                  <div className="metric-desc">Per trading day</div>
                 </td>
                 <td className="spy-value">
-                  {formatPercentage(performanceData.weekly_returns?.benchmark?.mean, 2, true)} ± {formatPercentage(performanceData.weekly_returns?.benchmark?.std, 2)}
+                  {pct(daily.benchmark?.mean, 3, true)} ± {pct(daily.benchmark?.std, 2)}
                 </td>
                 <td className="oz-value">
-                  {formatPercentage(performanceData.weekly_returns?.portfolio?.mean, 2, true)} ± {formatPercentage(performanceData.weekly_returns?.portfolio?.std, 2)}
+                  {pct(daily.portfolio?.mean, 3, true)} ± {pct(daily.portfolio?.std, 2)}
                 </td>
-                <td className={`delta-value ${(performanceData.weekly_returns?.excess?.mean || 0) >= 0 ? 'positive' : 'negative'}`}>
-                  {formatPercentage(performanceData.weekly_returns?.excess?.mean, 2, true)}
-                </td>
-              </tr>
-              <tr>
-                <td className="metric-name">
-                  <div className="metric-title">Cumulative Performance</div>
-                  <div className="metric-desc">Total returns since August 25, 2025</div>
-                </td>
-                <td className="spy-value">
-                  {formatPercentage(performanceData.cumulative_performance?.benchmark, 2, true)}
-                </td>
-                <td className="oz-value">
-                  {formatPercentage(performanceData.cumulative_performance?.portfolio, 2, true)}
-                </td>
-                <td className={`delta-value ${(performanceData.cumulative_performance?.outperformance || 0) >= 0 ? 'positive' : 'negative'}`}>
-                  {formatPercentage(performanceData.cumulative_performance?.outperformance, 2, true)}
+                <td className={`delta-value ${deltaClass(daily.excess?.mean)}`}>
+                  {pct(daily.excess?.mean, 3, true)}
                 </td>
               </tr>
               <tr>
                 <td className="metric-name">
-                  <div className="metric-title">Max Drawdown</div>
-                  <div className="metric-desc">Largest peak-to-trough decline</div>
+                  <div className="metric-title">Sharpe ratio</div>
+                  <div className="metric-desc">Return per unit of risk, annualized</div>
                 </td>
-                <td className="spy-value">
-                  {formatPercentage(performanceData.daily_returns?.benchmark?.max_drawdown, 2)}
-                </td>
-                <td className="oz-value">
-                  {formatPercentage(performanceData.daily_returns?.portfolio?.max_drawdown, 2)}
-                </td>
-                <td className={`delta-value ${((performanceData.daily_returns?.portfolio?.max_drawdown || 0) - (performanceData.daily_returns?.benchmark?.max_drawdown || 0)) <= 0 ? 'positive' : 'negative'}`}>
-                  {formatPercentage((performanceData.daily_returns?.portfolio?.max_drawdown || 0) - (performanceData.daily_returns?.benchmark?.max_drawdown || 0), 2, true)}
-                </td>
+                <td className="spy-value">{num(daily.benchmark?.sharpe_annualized, 2, true)}</td>
+                <td className="oz-value">{num(daily.portfolio?.sharpe_annualized, 2, true)}</td>
+                <td className={`delta-value ${deltaClass(sharpeDelta)}`}>{num(sharpeDelta, 2, true)}</td>
               </tr>
               <tr>
                 <td className="metric-name">
-                  <div className="metric-title">Sharpe Ratio</div>
-                  <div className="metric-desc">Risk-adjusted returns (annualized)</div>
+                  <div className="metric-title">Max drawdown</div>
+                  <div className="metric-desc">Deepest peak-to-trough fall</div>
                 </td>
-                <td className="spy-value">
-                  {formatNumber(performanceData.daily_returns?.benchmark?.sharpe_annualized, 3, true)}
-                </td>
-                <td className="oz-value">
-                  {formatNumber(performanceData.daily_returns?.portfolio?.sharpe_annualized, 3, true)}
-                </td>
-                <td className={`delta-value ${((performanceData.daily_returns?.portfolio?.sharpe_annualized || 0) - (performanceData.daily_returns?.benchmark?.sharpe_annualized || 0)) >= 0 ? 'positive' : 'negative'}`}>
-                  {formatNumber((performanceData.daily_returns?.portfolio?.sharpe_annualized || 0) - (performanceData.daily_returns?.benchmark?.sharpe_annualized || 0), 3, true)}
-                </td>
+                <td className="spy-value">{pct(daily.benchmark?.max_drawdown, 2)}</td>
+                <td className="oz-value">{pct(daily.portfolio?.max_drawdown, 2)}</td>
+                <td className={`delta-value ${deltaClass(mddDelta, false)}`}>{pct(mddDelta, 2, true)}</td>
               </tr>
               <tr>
                 <td className="metric-name">
-                  <div className="metric-title">P-Value (Daily)</div>
-                  <div className="metric-desc">Statistical significance of excess returns</div>
+                  <div className="metric-title">Beta</div>
+                  <div className="metric-desc">Move per 1% move in SPY</div>
+                </td>
+                <td className="spy-value">1.00</td>
+                <td className="oz-value">{num(risk.beta, 2)}</td>
+                <td className="delta-value">{num(diff(risk.beta, 1), 2, true)}</td>
+              </tr>
+              <tr>
+                <td className="metric-name">
+                  <div className="metric-title">Alpha</div>
+                  <div className="metric-desc">Annualized return beyond what beta explains</div>
                 </td>
                 <td className="spy-value">—</td>
-                <td className="oz-value">—</td>
-                <td className={`delta-value ${(performanceData.statistical_tests?.daily?.p_value || 1) <= 0.05 ? 'positive' : 'negative'}`}>
-                  {formatNumber(performanceData.statistical_tests?.daily?.p_value, 4)}
-                </td>
-              </tr>
-              <tr>
-                <td className="metric-name">
-                  <div className="metric-title">P-Value (Total)</div>
-                  <div className="metric-desc">Overall statistical significance across all data</div>
-                </td>
-                <td className="spy-value">—</td>
-                <td className="oz-value">—</td>
-                <td className={`delta-value ${(performanceData.statistical_tests?.weekly?.p_value || 1) <= 0.05 ? 'positive' : 'negative'}`}>
-                  {formatNumber(performanceData.statistical_tests?.weekly?.p_value, 4)}
-                </td>
-              </tr>
-              <tr>
-                <td className="metric-name">
-                  <div className="metric-title">Information Ratio</div>
-                  <div className="metric-desc">Excess return per unit of tracking error</div>
-                </td>
-                <td className="spy-value">—</td>
-                <td className="oz-value">—</td>
-                <td className={`delta-value ${(performanceData.daily_returns?.excess?.information_ratio_annualized || 0) >= 0 ? 'positive' : 'negative'}`}>
-                  {formatNumber(performanceData.daily_returns?.excess?.information_ratio_annualized, 3, true)}
-                </td>
-              </tr>
-              <tr>
-                <td className="metric-name">
-                  <div className="metric-title">Win Rate</div>
-                  <div className="metric-desc">Percentage of periods outperforming SPY</div>
-                </td>
-                <td className="spy-value">—</td>
-                <td className="oz-value">—</td>
-                <td className={`delta-value ${(performanceData.win_rate || 0) >= 0.5 ? 'positive' : 'negative'}`}>
-                  {formatPercentage(performanceData.win_rate, 1)}
-                </td>
-              </tr>
-              <tr>
-                <td className="metric-name">
-                  <div className="metric-title">Bootstrap Probability</div>
-                  <div className="metric-desc">Probability that mean excess return &gt; 0</div>
-                </td>
-                <td className="spy-value">—</td>
-                <td className="oz-value">—</td>
-                <td className={`delta-value ${(performanceData.statistical_tests?.daily?.probability_positive || 0) >= 0.5 ? 'positive' : 'negative'}`}>
-                  {formatPercentage(performanceData.statistical_tests?.daily?.probability_positive, 1)}
-                </td>
-              </tr>
-              <tr>
-                <td className="metric-name">
-                  <div className="metric-title">T-Statistic</div>
-                  <div className="metric-desc">Statistical test value for significance</div>
-                </td>
-                <td className="spy-value">—</td>
-                <td className="oz-value">—</td>
-                <td className={`delta-value ${(performanceData.statistical_tests?.daily?.t_statistic || 0) >= 0 ? 'positive' : 'negative'}`}>
-                  {formatNumber(performanceData.statistical_tests?.daily?.t_statistic, 3, true)}
-                </td>
-              </tr>
-              <tr>
-                <td className="metric-name">
-                  <div className="metric-title">Bootstrap CI</div>
-                  <div className="metric-desc">95% confidence interval for mean excess return</div>
-                </td>
-                <td className="spy-value">—</td>
-                <td className="oz-value">—</td>
-                <td className="delta-value">
-                  [{formatPercentage(performanceData.statistical_tests?.daily?.bootstrap_ci?.[0], 2)}, {formatPercentage(performanceData.statistical_tests?.daily?.bootstrap_ci?.[1], 2)}]
+                <td className="oz-value">{pct(risk.alpha_annualized, 2, true)}</td>
+                <td className={`delta-value ${deltaClass(risk.alpha_annualized)}`}>
+                  {pct(risk.alpha_annualized, 2, true)}
                 </td>
               </tr>
             </tbody>
           </table>
-          </div>
-        </div>
-        <div className="pvalue-disclaimer">
-          <p><strong>⚠️ P-Value Disclaimer:</strong> The p-value will decrease over time as more data is collected. A p-value below 0.05 indicates statistical significance, but this threshold may change as the sample size grows.</p>
-        </div>
-        <div className="sharpe-disclaimer">
-          <p><strong>📊 Sharpe Ratio Disclaimer:</strong> Sharpe ratios are calculated using the risk-free rate and may not be meaningful with limited historical data. Higher values indicate better risk-adjusted returns, but results should be interpreted cautiously with small sample sizes.</p>
         </div>
       </div>
 
-      {/* Recent Performance - Daily */}
+      {/* ------------------------------------------------ is it for real? --- */}
       <div className="card mb-lg">
         <div className="card-header">
-          <h2 className="card-title">Last {Math.min(10, performanceData.recent_performance?.last_10_days?.length || 0)} days (OZ vs SPY)</h2>
-          <p className="section-explanation">Recent daily performance showing day-by-day comparison with SPY.</p>
+          <h2 className="card-title">Is the difference real?</h2>
+          <span className={`pill ${significant ? 'pill-success' : ''}`}>
+            {significant ? 'Significant at 5%' : 'Not significant'}
+          </span>
         </div>
-        <div className="card-body">
-          <div className="performance-list">
-          {performanceData.recent_performance?.last_10_days?.map((day, index) => (
-            <div key={index} className="performance-item">
-              <span className="date">{day.date}</span>
-              <span className="separator">|</span>
-              <span className="oz-return">OZ {formatPercentage(day.portfolio_return, 2, true)}</span>
-              <span className="spy-return">SPY {formatPercentage(day.benchmark_return, 2, true)}</span>
-              <span className={`excess-return ${(day.excess_return || 0) >= 0 ? 'positive' : 'negative'}`}>
-                Δ {formatPercentage(day.excess_return, 2, true)}
-              </span>
-            </div>
-          ))}
-          </div>
+        <p className="section-explanation">
+          Every test asks the same one-sided question: is the average weekly edge over SPY
+          greater than zero, or is it noise?
+        </p>
+        <div className="table-container">
+          <table className="performance-table">
+            <thead>
+              <tr>
+                <th>Test</th>
+                <th>Value</th>
+                <th>What it means</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td className="metric-name">
+                  <div className="metric-title">Mean weekly edge</div>
+                  <div className="metric-desc">Oracle Zero minus SPY, per week</div>
+                </td>
+                <td className={`oz-value ${deltaClass(weekly.excess?.mean)}`}>
+                  {pct(weekly.excess?.mean, 3, true)}
+                </td>
+                <td className="stat-read">What every row below tests.</td>
+              </tr>
+              <tr>
+                <td className="metric-name">
+                  <div className="metric-title">t-statistic</div>
+                  <div className="metric-desc">Edge divided by its standard error</div>
+                </td>
+                <td className="oz-value">{num(tests.t_statistic, 3, true)}</td>
+                <td className="stat-read">±2 is roughly where a result starts to look unusual.</td>
+              </tr>
+              <tr>
+                <td className="metric-name">
+                  <div className="metric-title">p-value (t-test)</div>
+                  <div className="metric-desc">One-sided, {tests.degrees_freedom ?? '—'} degrees of freedom</div>
+                </td>
+                <td className={`oz-value ${significant ? 'positive' : ''}`}>{num(pValue, 3)}</td>
+                <td className="stat-read">
+                  Odds of an edge this large from a strategy with none. Below 0.05 is the bar.
+                </td>
+              </tr>
+              <tr>
+                <td className="metric-name">
+                  <div className="metric-title">p-value (bootstrap)</div>
+                  <div className="metric-desc">
+                    {(performanceData.statistical_tests?.bootstrap_iterations ?? 10000).toLocaleString()} resamples
+                    under the null
+                  </div>
+                </td>
+                <td className="oz-value">{num(pBoot, 3)}</td>
+                <td className="stat-read">
+                  Same question, no normality assumed. It agrees with the t-test.
+                </td>
+              </tr>
+              <tr>
+                <td className="metric-name">
+                  <div className="metric-title">95% confidence interval</div>
+                  <div className="metric-desc">Plausible range for the true edge</div>
+                </td>
+                <td className="oz-value">
+                  [{pct(ci[0], 3, true)}, {pct(ci[1], 3, true)}]
+                </td>
+                <td className="stat-read">
+                  {ci[0] != null && ci[1] != null && ci[0] < 0 && ci[1] > 0
+                    ? 'Straddles zero, so no edge is consistent with the data.'
+                    : 'Sits entirely on one side of zero.'}
+                </td>
+              </tr>
+              <tr>
+                <td className="metric-name">
+                  <div className="metric-title">Win rate</div>
+                  <div className="metric-desc">Weeks finishing ahead of SPY</div>
+                </td>
+                <td className={`oz-value ${deltaClass((winRate ?? 0) - 0.5)}`}>
+                  {pct(winRate, 1)}
+                </td>
+                <td className="stat-read">
+                  {winWeeks != null ? `${winWeeks} of ${weeksCount} weeks. ` : ''}
+                  A coin flip sits at 50%.
+                </td>
+              </tr>
+              <tr>
+                <td className="metric-name">
+                  <div className="metric-title">Information ratio</div>
+                  <div className="metric-desc">Annualized edge per unit of tracking error</div>
+                </td>
+                <td className={`oz-value ${deltaClass(weekly.excess?.information_ratio_annualized)}`}>
+                  {num(weekly.excess?.information_ratio_annualized, 2, true)}
+                </td>
+                <td className="stat-read">Payoff for deviating from the index at all.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div className="pvalue-disclaimer">
+          <p>
+            <strong>On reading these:</strong> a p-value above 0.05 does not prove the two
+            are identical, only that {weeksCount} weeks is not enough data to tell them apart.
+          </p>
         </div>
       </div>
 
-      {/* Recent Performance - Weekly */}
+      {/* ------------------------------------------------- weekly deltas --- */}
+      <div className="card mb-lg">
+        <div className="card-header">
+          <h2 className="card-title">Weekly deltas</h2>
+        </div>
+        <p className="section-explanation">
+          Each bar is one week of Oracle Zero minus SPY, in percentage points. Purple beat
+          the index, red lagged it.
+        </p>
+
+        <div className="chart-tabs">
+          <button
+            className={`chart-tab ${chartTab === 'weekly' ? 'active' : ''}`}
+            onClick={() => setChartTab('weekly')}
+          >
+            Week by week
+          </button>
+          <button
+            className={`chart-tab ${chartTab === 'cumulative' ? 'active' : ''}`}
+            onClick={() => setChartTab('cumulative')}
+          >
+            Running gap
+          </button>
+        </div>
+
+        {chartData.length === 0 ? (
+          <p className="text-muted text-center py-xl">No weekly data available.</p>
+        ) : chartTab === 'weekly' ? (
+          <ResponsiveContainer width="100%" height={360}>
+            <BarChart data={chartData} margin={{ top: 8, right: 8, left: 0, bottom: 8 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+              <XAxis
+                dataKey="label"
+                stroke="var(--muted)"
+                tick={{ fontSize: 11 }}
+                tickMargin={10}
+                interval={Math.max(0, Math.ceil(chartData.length / 9) - 1)}
+              />
+              <YAxis
+                stroke="var(--muted)"
+                tick={{ fontSize: 11 }}
+                tickMargin={8}
+                width={56}
+                tickFormatter={(v) => `${v.toFixed(1)}pp`}
+              />
+              <Tooltip content={<CustomTooltip />} cursor={{ fill: 'var(--surface-2)' }} />
+              <ReferenceLine y={0} stroke="var(--border-strong)" />
+              <Bar dataKey="delta" radius={[2, 2, 2, 2]}>
+                {chartData.map((point) => (
+                  <Cell
+                    key={point.date}
+                    fill={point.delta >= 0 ? 'var(--primary)' : 'var(--danger)'}
+                  />
+                ))}
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        ) : (
+          <ResponsiveContainer width="100%" height={360}>
+            <LineChart data={chartData} margin={{ top: 8, right: 8, left: 0, bottom: 8 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+              <XAxis
+                dataKey="label"
+                stroke="var(--muted)"
+                tick={{ fontSize: 11 }}
+                tickMargin={10}
+                interval={Math.max(0, Math.ceil(chartData.length / 9) - 1)}
+              />
+              <YAxis
+                stroke="var(--muted)"
+                tick={{ fontSize: 11 }}
+                tickMargin={8}
+                width={56}
+                tickFormatter={(v) => `${v.toFixed(1)}%`}
+              />
+              <Tooltip content={<CustomTooltip />} />
+              <ReferenceLine y={0} stroke="var(--border-strong)" />
+              <Line
+                type="monotone"
+                dataKey="cumulative"
+                stroke="var(--primary)"
+                strokeWidth={2}
+                dot={false}
+              />
+            </LineChart>
+          </ResponsiveContainer>
+        )}
+
+        <p className="chart-note">
+          {chartTab === 'weekly'
+            ? `Largest single-week gain over SPY: ${num(Math.max(...chartData.map((d) => d.delta)), 2, true)} pp. Largest shortfall: ${num(Math.min(...chartData.map((d) => d.delta)), 2, true)} pp.`
+            : 'The compounded gap, week by week. It ends where the cumulative delta in the first table does.'}
+        </p>
+      </div>
+
+      {/* ------------------------------------------------------ takeaways --- */}
       <div className="card">
         <div className="card-header">
-          <h2 className="card-title">Last {Math.min(6, performanceData.recent_performance?.last_6_weeks?.length || 0)} weeks (OZ vs SPY) - Aggregated</h2>
-          <p className="section-explanation">Weekly performance summary showing consistency over time.</p>
+          <h2 className="card-title">Takeaways</h2>
         </div>
-        <div className="card-body">
-          <div className="performance-list">
-          {performanceData.recent_performance?.last_6_weeks?.map((week, index) => (
-            <div key={index} className="performance-item">
-              <span className="date">{week.date}</span>
-              <span className="separator">|</span>
-              <span className="oz-return">OZ {formatPercentage(week.portfolio_return, 2, true)}</span>
-              <span className="spy-return">SPY {formatPercentage(week.benchmark_return, 2, true)}</span>
-              <span className={`excess-return ${(week.excess_return || 0) >= 0 ? 'positive' : 'negative'}`}>
-                Δ {formatPercentage(week.excess_return, 2, true)}
-              </span>
+        <div className="learn-list">
+          <div className="learn-item">
+            <div className="learn-num">01</div>
+            <div>
+              <h3 className="learn-title">It tracked the index rather than beating it</h3>
+              <p className="learn-text">
+                {pct(cumulative.portfolio, 2, true)} against SPY's {pct(cumulative.benchmark, 2, true)} over{' '}
+                {weeksCount} weeks. That is a gap of {pct(outperf, 2, true)}, or about{' '}
+                {pct(weekly.excess?.mean, 3, true)} per week.
+              </p>
             </div>
-          ))}
+          </div>
+          <div className="learn-item">
+            <div className="learn-num">02</div>
+            <div>
+              <h3 className="learn-title">That gap is indistinguishable from noise</h3>
+              <p className="learn-text">
+                The t-test gives p = {num(pValue, 3)}, the bootstrap p = {num(pBoot, 3)}. Two methods,
+                one answer, and the 95% interval [{pct(ci[0], 3, true)}, {pct(ci[1], 3, true)}] contains zero.
+              </p>
+            </div>
+          </div>
+          <div className="learn-item">
+            <div className="learn-num">03</div>
+            <div>
+              <h3 className="learn-title">The risk profile matched too</h3>
+              <p className="learn-text">
+                Beta {num(risk.beta, 2)}, Sharpe {num(daily.portfolio?.sharpe_annualized, 2)} against SPY's{' '}
+                {num(daily.benchmark?.sharpe_annualized, 2)}, drawdown {pct(daily.portfolio?.max_drawdown, 2)} versus{' '}
+                {pct(daily.benchmark?.max_drawdown, 2)}. It matched the index on the way there as well as
+                at the end.
+              </p>
+            </div>
+          </div>
+          <div className="learn-item">
+            <div className="learn-num">04</div>
+            <div>
+              <h3 className="learn-title">What these numbers actually grade</h3>
+              <p className="learn-text">
+                The account rebalanced to market-cap weights; the model's weights were recorded
+                but never traded. Landing within a fraction of a percent of SPY is the expected
+                result, and it is what happened.
+              </p>
+            </div>
+          </div>
+          <div className="learn-item">
+            <div className="learn-num">05</div>
+            <div>
+              <h3 className="learn-title">What this cannot tell you</h3>
+              <p className="learn-text">
+                At {pct(weekly.excess?.std, 2)} weekly tracking error, an edge worth 1% a year would take
+                over a decade to separate from noise. Returns also come from total equity, which
+                does not net out deposits.
+              </p>
+            </div>
           </div>
         </div>
       </div>

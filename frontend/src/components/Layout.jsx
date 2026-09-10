@@ -12,9 +12,10 @@ export default function Layout() {
   }, [location.pathname]);
   
   return (
-    <div className="container">
+    <div className="app-shell">
       <header className="header">
-        <nav className="nav">
+        <div className="header-inner">
+          <nav className="nav">
           <div className="nav-logo">
             <img src={logo} alt="Oracle Zero" className="nav-logo-img" />
           </div>
@@ -33,7 +34,7 @@ export default function Layout() {
               to="/portfolio" 
               className={`nav-link ${location.pathname === '/portfolio' ? 'active' : ''}`}
             >
-              Portfolio
+              Overview
             </Link>
             <Link 
               to="/portfolio/history" 
@@ -60,26 +61,27 @@ export default function Layout() {
               How it Works
             </Link>
             <Link 
+              to="/portfolio/system-design" 
+              className={`nav-link ${location.pathname === '/portfolio/system-design' ? 'active' : ''}`}
+            >
+              System Design
+            </Link>
+            <Link 
               to="/portfolio/timeline" 
               className={`nav-link ${location.pathname === '/portfolio/timeline' ? 'active' : ''}`}
             >
               How I Built It
             </Link>
+            <span className="nav-sep" aria-hidden="true" />
             <a 
               href="https://github.com/manovay/sp500_platform" 
               target="_blank" 
               rel="noopener noreferrer"
-              className="nav-link"
-              style={{ 
-                display: 'flex', 
-                alignItems: 'center', 
-                gap: '0.5rem',
-                textDecoration: 'none'
-              }}
+              className="nav-link nav-external"
             >
               <svg 
-                width="16" 
-                height="16" 
+                width="14" 
+                height="14" 
                 viewBox="0 0 24 24" 
                 fill="currentColor"
                 style={{ flexShrink: 0 }}
@@ -89,10 +91,13 @@ export default function Layout() {
               GitHub
             </a>
           </div>
-        </nav>
+          </nav>
+        </div>
       </header>
       <main>
-        <Outlet />
+        <div className="container">
+          <Outlet />
+        </div>
       </main>
     </div>
   );

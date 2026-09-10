@@ -752,10 +752,13 @@ LLM_KEY = os.getenv("LLM_KEY")
 if not LLM_KEY:
     print("LLM_KEY not found in environment variables!")
 
-# Load FMP API key
-FMP_API_KEY = os.getenv("FMP_API_KEY")
-if not FMP_API_KEY:
-    print("FMP_API_KEY not found in environment variables!")
+# Mean 3-month Treasury bill yield across the experiment window (2025-08-25 to
+# 2026-08-24): 249 trading days, ranging 3.62% to 4.29%. This was fetched live from FMP
+# until that subscription ended. Pinning it is not a downgrade — the window is closed so
+# the figure cannot change, and the average over the period is the right input for an
+# annualised Sharpe anyway, where the old code was using whatever the spot rate happened
+# to be on the day someone loaded the page.
+RISK_FREE_RATE_ANNUAL = 0.038134
 
 # Custom JSON encoder to handle date and decimal objects
 class DateEncoder(json.JSONEncoder):
@@ -765,51 +768,6 @@ class DateEncoder(json.JSONEncoder):
         elif hasattr(obj, '__float__'):  # Handle Decimal, Fraction, etc.
             return float(obj)
         return super().default(obj)
-
-def fetch_treasury_rates():
-    """
-    Fetch current treasury rates from FMP API
-    Returns the 3-month treasury rate as the risk-free rate
-    Raises an exception if no data is available
-    """
-    if not FMP_API_KEY:
-        raise Exception("FMP_API_KEY not available")
-    
-    try:
-        # Use the new treasury-rates endpoint with date range
-        from datetime import datetime, timedelta
-        end_date = datetime.now()
-        start_date = end_date - timedelta(days=30)  # Get last 30 days of data
-        
-        url = f"https://financialmodelingprep.com/stable/treasury-rates?from={start_date.strftime('%Y-%m-%d')}&to={end_date.strftime('%Y-%m-%d')}&apikey={FMP_API_KEY}"
-        response = requests.get(url, timeout=10)
-        response.raise_for_status()
-        data = response.json()
-        
-        if not data or len(data) == 0:
-            raise Exception("No treasury rate data available from API")
-        
-        # Get the most recent treasury rate data (first item in the array)
-        latest_data = data[0]
-        
-        # Try to get 3-month rate first, then 1-month, then 10-year as fallback
-        treasury_rate = None
-        if 'month3' in latest_data and latest_data['month3']:
-            treasury_rate = float(latest_data['month3']) / 100  # Convert percentage to decimal
-        elif 'month1' in latest_data and latest_data['month1']:
-            treasury_rate = float(latest_data['month1']) / 100
-        elif 'year10' in latest_data and latest_data['year10']:
-            treasury_rate = float(latest_data['year10']) / 100
-        
-        if treasury_rate is None:
-            raise Exception("No valid treasury rate found in API response")
-        
-        print(f"Fetched treasury rate: {treasury_rate:.4f} ({treasury_rate*100:.2f}%)")
-        return treasury_rate
-            
-    except Exception as e:
-        print(f"Error fetching treasury rates: {e}")
-        raise e
 
 def call_render_endpoint(prompt):
     """
@@ -1024,7 +982,30 @@ def calculate_performance_stats(conn, since=None, weeks=None, rf_annual=None, bo
     def weekly_rf_from_annual(annual_rf):
         return (1.0 + annual_rf)**(1.0 / 52) - 1.0
 
-    def ttest_two_sided_mean_gt_zero(x):
+    def clean(value):
+        """
+        Flask serialises NaN and Infinity as bare literals, which are invalid JSON
+        and throw inside response.json() on the client. Emit null instead.
+        """
+        if value is None:
+            return None
+        try:
+            f = float(value)
+        except (TypeError, ValueError):
+            return value
+        return f if math.isfinite(f) else None
+
+    def iso(d):
+        return d.isoformat() if hasattr(d, 'isoformat') else str(d)
+
+    def ttest_one_sided_mean_gt_zero(x):
+        """
+        Upper-tail test of H0: mean <= 0 against H1: mean > 0.
+
+        The claim being tested is directional ("the strategy beat SPY"), so the
+        tail must be too. Using abs(t) here would hand a small p-value to a
+        strongly negative excess return and report it as a significant win.
+        """
         x = np.asarray(x, dtype=float)
         n = x.size
         if n < 2:
@@ -1032,32 +1013,49 @@ def calculate_performance_stats(conn, since=None, weeks=None, rf_annual=None, bo
         mean = x.mean()
         sd = x.std(ddof=1)
         if sd == 0.0:
-            t_stat = math.inf if mean > 0 else (-math.inf if mean < 0 else 0.0)
-            p = 0.0 if math.isfinite(t_stat) else 1.0
-            return t_stat, n - 1, p
+            if mean > 0:
+                return math.inf, n - 1, 0.0
+            return (-math.inf if mean < 0 else 0.0), n - 1, 1.0
         se = sd / math.sqrt(n)
         t_stat = mean / se
         df = n - 1
         try:
             from scipy import stats
-            p = 2.0 * stats.t.sf(abs(t_stat), df=df)
-            return float(t_stat), df, float(p)
+            p = float(stats.t.sf(t_stat, df=df))
         except Exception:
-            z = abs(t_stat)
-            p_one_side = 0.5 * math.erfc(z / math.sqrt(2.0))
-            p_two = 2.0 * p_one_side
-            return float(t_stat), df, float(p_two)
+            # Normal approximation: sf(t) = 0.5 * erfc(t / sqrt(2)), signed.
+            p = 0.5 * math.erfc(t_stat / math.sqrt(2.0))
+        return float(t_stat), df, float(p)
 
-    def bootstrap_mean_ci(x, iters=10000, seed=42):
-        rng = np.random.default_rng(seed)
+    def bootstrap_excess(x, iters=10000, seed=42):
+        """
+        Percentile CI for the mean, plus a p-value from resampling under the null.
+
+        Resampling the observed series and counting how often the mean clears zero
+        does not give a p-value, because that distribution is centred on the
+        observed mean rather than on the hypothesised zero. So the sample is
+        recentred before the null draw. The (count + 1) / (iters + 1) form keeps
+        the result away from an impossible exact zero.
+
+        This is an iid bootstrap: it assumes excess returns are independent across
+        days. Serial correlation would make the interval narrower than it should be.
+        """
+        x = np.asarray(x, dtype=float)
         n = x.size
-        if n == 0:
-            return (float('nan'), float('nan')), float('nan')
-        idx = rng.integers(0, n, size=(iters, n))
-        samp_means = x[idx].mean(axis=1)
+        if n < 2:
+            return (float('nan'), float('nan')), float('nan'), float('nan')
+        rng = np.random.default_rng(seed)
+        obs_mean = float(x.mean())
+
+        samp_means = x[rng.integers(0, n, size=(iters, n))].mean(axis=1)
         lo, hi = np.percentile(samp_means, [2.5, 97.5])
         prob_pos = float(np.mean(samp_means > 0.0))
-        return (float(lo), float(hi)), prob_pos
+
+        centred = x - obs_mean
+        null_means = centred[rng.integers(0, n, size=(iters, n))].mean(axis=1)
+        p_boot = (float(np.sum(null_means >= obs_mean)) + 1.0) / (iters + 1.0)
+
+        return (float(lo), float(hi)), prob_pos, float(p_boot)
 
     def fetch_daily_data(conn, since, weeks):
         """Fetch daily data from nav_weekly and benchmark_weekly tables"""
@@ -1113,7 +1111,8 @@ def calculate_performance_stats(conn, since=None, weeks=None, rf_annual=None, bo
         rb = np.array(daily_returns_benchmark, dtype=float)
         
         if weeks is not None and weeks > 0:
-            days_to_keep = weeks * 7
+            # The series holds trading days only, so a week is 5 rows, not 7.
+            days_to_keep = weeks * 5
             if len(dates) > days_to_keep:
                 dates = dates[-days_to_keep:]
                 rp = rp[-days_to_keep:]
@@ -1163,9 +1162,8 @@ def calculate_performance_stats(conn, since=None, weeks=None, rf_annual=None, bo
         
         return weekly_dates, np.array(weekly_portfolio), np.array(weekly_benchmark)
 
-    # Fetch current treasury rate if not provided
     if rf_annual is None:
-        rf_annual = fetch_treasury_rates()
+        rf_annual = RISK_FREE_RATE_ANNUAL
     
     # Main calculation logic
     daily_dates, daily_rp, daily_rb = fetch_daily_data(conn, since, weeks)
@@ -1197,19 +1195,22 @@ def calculate_performance_stats(conn, since=None, weeks=None, rf_annual=None, bo
     std_ex = float(excess.std(ddof=1))
 
     sharpe_ann = (mean_rp - rf_w) / std_rp * math.sqrt(52) if std_rp > 0 else float('nan')
+    sharpe_rb_ann = (mean_rb - rf_w) / std_rb * math.sqrt(52) if std_rb > 0 else float('nan')
     ir_ann = mean_ex / std_ex * math.sqrt(52) if std_ex > 0 else float('nan')
 
     cum_rp = cumulative_return(rp)
     cum_rb = cumulative_return(rb)
     cum_ex = cum_rp - cum_rb
+    # Compounded relative return, unlike the arithmetic difference above.
+    cum_ex_geo = ((1.0 + cum_rp) / (1.0 + cum_rb) - 1.0) if cum_rb != -1.0 else float('nan')
 
     mdd_rp = max_drawdown(rp)
     mdd_rb = max_drawdown(rb)
 
     win_rate = float(np.mean(excess > 0.0)) if n > 0 else float('nan')
 
-    t_stat, df, p_val = ttest_two_sided_mean_gt_zero(excess)
-    (ci_lo, ci_hi), prob_pos = bootstrap_mean_ci(excess, iters=boots, seed=42)
+    t_stat, df, p_val = ttest_one_sided_mean_gt_zero(excess)
+    (ci_lo, ci_hi), prob_pos, p_boot = bootstrap_excess(excess, iters=boots, seed=42)
 
     # Daily statistics
     daily_mean_rp = float(daily_rp.mean())
@@ -1219,105 +1220,132 @@ def calculate_performance_stats(conn, since=None, weeks=None, rf_annual=None, bo
     daily_mean_ex = float(daily_excess.mean())
     daily_std_ex = float(daily_excess.std(ddof=1))
     
-    daily_rf = rf_annual / 365
-    daily_sharpe_ann = (daily_mean_rp - daily_rf) / daily_std_rp * math.sqrt(365) if daily_std_rp > 0 else float('nan')
-    daily_ir_ann = daily_mean_ex / daily_std_ex * math.sqrt(365) if daily_std_ex > 0 else float('nan')
+    # The series contains trading days only (weekends are dropped at ingestion),
+    # so both the risk-free conversion and the annualisation use 252, not 365.
+    daily_rf = (1.0 + rf_annual) ** (1.0 / 252) - 1.0
+    daily_sharpe_ann = (daily_mean_rp - daily_rf) / daily_std_rp * math.sqrt(252) if daily_std_rp > 0 else float('nan')
+    daily_sharpe_rb_ann = (daily_mean_rb - daily_rf) / daily_std_rb * math.sqrt(252) if daily_std_rb > 0 else float('nan')
+    daily_ir_ann = daily_mean_ex / daily_std_ex * math.sqrt(252) if daily_std_ex > 0 else float('nan')
 
-    daily_t_stat, daily_df, daily_p_val = ttest_two_sided_mean_gt_zero(daily_excess)
-    (daily_ci_lo, daily_ci_hi), daily_prob_pos = bootstrap_mean_ci(daily_excess, iters=boots, seed=42)
+    daily_t_stat, daily_df, daily_p_val = ttest_one_sided_mean_gt_zero(daily_excess)
+    (daily_ci_lo, daily_ci_hi), daily_prob_pos, daily_p_boot = bootstrap_excess(
+        daily_excess, iters=boots, seed=42
+    )
 
     daily_mdd_rp = max_drawdown(daily_rp)
     daily_mdd_rb = max_drawdown(daily_rb)
 
+    win_rate_daily = float(np.mean(daily_excess > 0.0)) if n_daily > 0 else float('nan')
+
+    # Beta matters here because the excess series above implicitly assumes it is 1.
+    var_rb = float(np.var(daily_rb, ddof=1))
+    if var_rb > 0:
+        beta = float(np.cov(daily_rp, daily_rb, ddof=1)[0, 1] / var_rb)
+        alpha_daily = (daily_mean_rp - daily_rf) - beta * (daily_mean_rb - daily_rf)
+        alpha_ann = (1.0 + alpha_daily) ** 252 - 1.0
+    else:
+        beta = float('nan')
+        alpha_ann = float('nan')
+
+    def point(date_value, port, bench):
+        return {
+            "date": iso(date_value),
+            "portfolio_return": clean(port),
+            "benchmark_return": clean(bench),
+            "excess_return": clean(port - bench),
+        }
+
+    weekly_series = [point(dates[i], rp[i], rb[i]) for i in range(len(rp))]
+    daily_series = [point(daily_dates[i], daily_rp[i], daily_rb[i]) for i in range(len(daily_rp))]
+
     return {
         "period": {
-            "start": start.isoformat() if hasattr(start, 'isoformat') else str(start),
-            "end": end.isoformat() if hasattr(end, 'isoformat') else str(end),
+            "start": iso(start),
+            "end": iso(end),
             "weeks": n,
             "days": n_daily
         },
         "risk_free_rate": {
-            "annual": rf_annual,
-            "weekly": rf_w,
-            "daily": daily_rf
+            "annual": clean(rf_annual),
+            "weekly": clean(rf_w),
+            "daily": clean(daily_rf)
         },
         "daily_returns": {
             "portfolio": {
-                "mean": daily_mean_rp,
-                "std": daily_std_rp,
-                "sharpe_annualized": daily_sharpe_ann,
-                "max_drawdown": daily_mdd_rp
+                "mean": clean(daily_mean_rp),
+                "std": clean(daily_std_rp),
+                "sharpe_annualized": clean(daily_sharpe_ann),
+                "max_drawdown": clean(daily_mdd_rp)
             },
             "benchmark": {
-                "mean": daily_mean_rb,
-                "std": daily_std_rb,
-                "max_drawdown": daily_mdd_rb
+                "mean": clean(daily_mean_rb),
+                "std": clean(daily_std_rb),
+                "sharpe_annualized": clean(daily_sharpe_rb_ann),
+                "max_drawdown": clean(daily_mdd_rb)
             },
             "excess": {
-                "mean": daily_mean_ex,
-                "std": daily_std_ex,
-                "information_ratio_annualized": daily_ir_ann
+                "mean": clean(daily_mean_ex),
+                "std": clean(daily_std_ex),
+                "information_ratio_annualized": clean(daily_ir_ann)
             }
         },
         "weekly_returns": {
             "portfolio": {
-                "mean": mean_rp,
-                "std": std_rp,
-                "sharpe_annualized": sharpe_ann,
-                "max_drawdown": mdd_rp
+                "mean": clean(mean_rp),
+                "std": clean(std_rp),
+                "sharpe_annualized": clean(sharpe_ann),
+                "max_drawdown": clean(mdd_rp)
             },
             "benchmark": {
-                "mean": mean_rb,
-                "std": std_rb,
-                "max_drawdown": mdd_rb
+                "mean": clean(mean_rb),
+                "std": clean(std_rb),
+                "sharpe_annualized": clean(sharpe_rb_ann),
+                "max_drawdown": clean(mdd_rb)
             },
             "excess": {
-                "mean": mean_ex,
-                "std": std_ex,
-                "information_ratio_annualized": ir_ann
+                "mean": clean(mean_ex),
+                "std": clean(std_ex),
+                "information_ratio_annualized": clean(ir_ann)
             }
         },
         "cumulative_performance": {
-            "portfolio": cum_rp,
-            "benchmark": cum_rb,
-            "outperformance": cum_ex
+            "portfolio": clean(cum_rp),
+            "benchmark": clean(cum_rb),
+            "outperformance": clean(cum_ex),
+            "outperformance_compounded": clean(cum_ex_geo)
         },
-        "win_rate": win_rate,
+        "risk": {
+            "beta": clean(beta),
+            "alpha_annualized": clean(alpha_ann)
+        },
+        "win_rate": clean(win_rate),
+        "win_rate_weekly": clean(win_rate),
+        "win_rate_daily": clean(win_rate_daily),
         "statistical_tests": {
             "daily": {
-                "t_statistic": daily_t_stat,
+                "t_statistic": clean(daily_t_stat),
                 "degrees_freedom": daily_df,
-                "p_value": daily_p_val,
-                "bootstrap_ci": [daily_ci_lo, daily_ci_hi],
-                "probability_positive": daily_prob_pos
+                "p_value": clean(daily_p_val),
+                "p_value_bootstrap": clean(daily_p_boot),
+                "bootstrap_ci": [clean(daily_ci_lo), clean(daily_ci_hi)],
+                "probability_positive": clean(daily_prob_pos)
             },
             "weekly": {
-                "t_statistic": t_stat,
+                "t_statistic": clean(t_stat),
                 "degrees_freedom": df,
-                "p_value": p_val,
-                "bootstrap_ci": [ci_lo, ci_hi],
-                "probability_positive": prob_pos
-            }
+                "p_value": clean(p_val),
+                "p_value_bootstrap": clean(p_boot),
+                "bootstrap_ci": [clean(ci_lo), clean(ci_hi)],
+                "probability_positive": clean(prob_pos)
+            },
+            "tail": "one-sided (H1: mean excess return > 0)",
+            "bootstrap_iterations": boots
         },
+        "weekly_series": weekly_series,
+        "daily_series": daily_series,
         "recent_performance": {
-            "last_10_days": [
-                {
-                    "date": daily_dates[i] if i < len(daily_dates) else None,
-                    "portfolio_return": daily_rp[i] if i < len(daily_rp) else None,
-                    "benchmark_return": daily_rb[i] if i < len(daily_rb) else None,
-                    "excess_return": (daily_rp[i] - daily_rb[i]) if i < len(daily_rp) and i < len(daily_rb) else None
-                }
-                for i in range(max(0, len(daily_rp) - 10), len(daily_rp))
-            ],
-            "last_6_weeks": [
-                {
-                    "date": dates[i] if i < len(dates) else None,
-                    "portfolio_return": rp[i] if i < len(rp) else None,
-                    "benchmark_return": rb[i] if i < len(rb) else None,
-                    "excess_return": (rp[i] - rb[i]) if i < len(rp) and i < len(rb) else None
-                }
-                for i in range(max(0, len(rp) - 6), len(rp))
-            ]
+            "last_10_days": daily_series[-10:],
+            "last_6_weeks": weekly_series[-6:]
         }
     }
 
@@ -1398,17 +1426,12 @@ def api_performance_quick():
 
 @app.route("/api/treasury-rate", methods=["GET"])
 def api_treasury_rate():
-    """Get current treasury rate from FMP API"""
-    try:
-        treasury_rate = fetch_treasury_rates()
-        return jsonify({
-            "status": "ok",
-            "treasury_rate": treasury_rate,
-            "treasury_rate_percent": treasury_rate * 100
-        })
-    except Exception as e:
-        print(f"Error fetching treasury rate: {e}")
-        return jsonify({"status": "error", "error": str(e)}), 500
+    """Risk-free rate used by the performance statistics."""
+    return jsonify({
+        "status": "ok",
+        "treasury_rate": RISK_FREE_RATE_ANNUAL,
+        "treasury_rate_percent": RISK_FREE_RATE_ANNUAL * 100
+    })
 
 # ============================================================================
 # LLM ENDPOINTS
